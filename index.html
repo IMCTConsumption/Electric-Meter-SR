@@ -730,6 +730,21 @@ i svg{
     <div id="report-area"><div class="section-empty">📋 เลือกเดือนเพื่อดูรายงาน</div></div>
   </div>
 
+  <!-- ── รายละเอียดรายมิเตอร์ แยกตาม Zone (ใช้เดือนเดียวกับตารางด้านบน) ── -->
+  <div class="card">
+    <div class="card-title">🔎 รายละเอียดรายมิเตอร์แยกตาม Zone</div>
+    <div class="f-2col">
+      <div class="f-row">
+        <label class="f-label">เลือก Zone</label>
+        <select class="f-input" id="zone-rep-select" onchange="renderZoneReport()"></select>
+      </div>
+      <div class="f-row" style="display:flex;align-items:flex-end">
+        <button class="btn btn-yellow btn-full" onclick="exportZoneReportExcel()">📥 Export Excel</button>
+      </div>
+    </div>
+    <div id="zone-report-area"><div class="section-empty">📋 เลือกเดือน (ด้านบน) แล้วเลือก Zone เพื่อดูรายละเอียด</div></div>
+  </div>
+
 </div>
   <!-- QR -->
   <div class="panel" id="panel-qr">
@@ -922,17 +937,17 @@ const REPORT_UTIL = [
    ข้อดี: sub ใหม่ที่เพิ่มเข้ามาทีหลังจะถูกจัดหมวดอัตโนมัติตาม zone ที่ตั้งไว้
    หมวดที่ zone ไม่ตรงกับรายการด้านล่าง จะตกไปอยู่ใน "อื่นๆ" (กันไม่ให้ตู้หายไปจากหน้าจอ) */
 const ZONE_CATEGORY_MAP = {
-  'BODY SHOP':        'BODY SHOP',
-  'PAINT SHOP':       'PAINT SHOP',
-  'LA SHOP':          'LA SHOP',
-  'UA SHOP':          'UA SHOP',
+  'BODY':        'BODY SHOP',
+  'PAINT':       'PAINT SHOP',
+  'LA':          'LA SHOP',
+  'UA':          'UA SHOP',
   'PT7,8':       'PT7,8',
-  'FRAME SHOP':       'FRAME SHOP',
-  'OFFICE':      'HEAD OFFICE + OLD OFFICE',
-  'FR SHOP':          'FR SHOP',
+  'FRAME':       'FRAME SHOP',
+  'OFFICE':      'HEAD OFFICE',
+  'FR':          'FR SHOP',
   'OLD CANTEEN': 'OLD CANTEEN',
   'AIR COMP':    'UTILITY PLANT',
-  'UTILITY PLANT':     'UTILITY PLANT'
+  'Utility':     'UTILITY PLANT'
 };
 const LOAD_CATEGORIES = [
   { name:'BODY SHOP',     icon:'🏭' },
@@ -941,7 +956,7 @@ const LOAD_CATEGORIES = [
   { name:'UA SHOP',       icon:'⚙️' },
   { name:'PT7,8',         icon:'🏗️' },
   { name:'FRAME SHOP',    icon:'🔩' },
-  { name:'HEAD OFFICE + OLD OFFICE',   icon:'🏢' },
+  { name:'HEAD OFFICE',   icon:'🏢' },
   { name:'FR SHOP',       icon:'🚧' },
   { name:'OLD CANTEEN',   icon:'🍽️' },
   { name:'UTILITY PLANT', icon:'💧' },
@@ -954,7 +969,7 @@ function getCategoryOf(sub){
 
 /* ───────── CONFIG ───────── */
 const API_URL     = 'https://script.google.com/macros/s/AKfycbwnMG0pAZGZo4yZfQtioQ-Uj1hP8ZbrWz5PfNlLuWc6XRl4kU69pyJUpO-pfhsiB1du7w/exec';
-const QR_BASE_URL = 'https://imctconsumption.github.io/Electric-Meter-SR/';
+const QR_BASE_URL = 'https://ramesimct.github.io/Substation-V2/';
 const ABNORMAL_MULTIPLIER = 5;
 
 /* ───────── STATE ───────── */
@@ -1457,7 +1472,7 @@ function goTab(name){
   if(tabEl) tabEl.classList.add('active');
   if(name === 'data')     { renderData(); renderStats(); }
   if(name === 'chart')    { populateDDs(); setSubQuick('30d'); buildCompareGroupOptions(); initG9Pickers(); renderG9Chart(); }
-  if(name === 'summary')  { buildMonthOptions(); loadReport(); }
+  if(name === 'summary')  { buildMonthOptions(); populateZoneReportSelect(); loadReport(); }
   if(name === 'qr')       { renderQR(); }
   if(name === 'settings') { renderSubList(); renderCalendarList(); }
 }
@@ -1491,6 +1506,7 @@ async function loadReport(){
     if(!res || !res.success) throw new Error(res?.error || 'Server error');
     reportRaw = res.summary || [];
     renderReport(month, lastDay);
+    renderZoneReport();
   }catch(e){
     if(thisReq !== reportReqId) return;
     document.getElementById('report-area').innerHTML = `<div class="warn-box">❌ ${e.message}</div>`;
@@ -1599,6 +1615,120 @@ function renderReport(month, lastDay){
     </div>
     <div style="margin-top:6px;font-size:10px;color:var(--text-3)">หน่วย: kWh · — = ไม่มีข้อมูล · UTILITY PLANT = รวม AC→Boiler · TOTAL = group หลัก + utility</div>`;
   buildCompareGroupOptions();
+}
+
+/* ════════════ รายละเอียดรายมิเตอร์แยกตาม Zone ════════════
+   ใช้ reportRaw/meterMap เดียวกับตารางรายงานหลักด้านบน (โหลดมาแล้วจาก loadReport())
+   ไม่ยิง request ใหม่ — แค่ render มุมมองอื่นจากข้อมูลชุดเดียวกัน */
+let zoneReportComputed = null;
+
+function populateZoneReportSelect(){
+  const sel = document.getElementById('zone-rep-select');
+  if(!sel) return;
+  const prev = sel.value;
+  // นับจำนวน sub ต่อ zone จาก subs จริง (ไม่ใช้ zone ที่ไม่มี sub อยู่เลย กันตัวเลือกว่างเปล่า)
+  const counts = {};
+  subs.forEach(s => { const cat = getCategoryOf(s); counts[cat] = (counts[cat]||0) + 1; });
+  const cats = LOAD_CATEGORIES.filter(c => counts[c.name] > 0);
+  sel.innerHTML = cats.map(c => `<option value="${c.name}">${c.icon} ${c.name} (${counts[c.name]})</option>`).join('');
+  if(prev && counts[prev]) sel.value = prev;
+}
+
+function renderZoneReport(){
+  const area = document.getElementById('zone-report-area');
+  const zoneName = document.getElementById('zone-rep-select')?.value;
+  if(!zoneName){ area.innerHTML = '<div class="section-empty">เลือก Zone</div>'; zoneReportComputed = null; return; }
+  if(!reportRaw.length){ area.innerHTML = '<div class="section-empty">📭 เลือกเดือนด้านบนก่อน (ยังไม่มีข้อมูลโหลดไว้)</div>'; zoneReportComputed = null; return; }
+  const month = document.getElementById('rep-month')?.value;
+  if(!month){ area.innerHTML = '<div class="section-empty">เลือกเดือนด้านบนก่อน</div>'; zoneReportComputed = null; return; }
+
+  const zoneSubs = subs.filter(s => getCategoryOf(s) === zoneName);
+  if(!zoneSubs.length){ area.innerHTML = '<div class="section-empty">ไม่มีมิเตอร์ใน Zone นี้</div>'; zoneReportComputed = null; return; }
+
+  const [y,m] = month.split('-');
+  const lastDay = new Date(parseInt(y), parseInt(m), 0).getDate();
+  const meterMap = buildMeterDayMap();
+  const allDates = [...new Set(reportRaw.map(r => r.period))].sort();
+  const days = [];
+  for(let d = 1; d <= lastDay; d++) days.push(`${month}-${String(d).padStart(2,'0')}`);
+
+  const fmtCell = v => v === null ? '<span style="color:var(--text-3)">—</span>' : Math.round(v).toLocaleString();
+
+  // แคชค่าต่อ (subId, dateStr) ไว้ครั้งเดียว ใช้ทั้งตอนสร้างแถวรายวันและผลรวมท้ายตาราง
+  const valGrid = {};
+  zoneSubs.forEach(s => {
+    valGrid[s.id] = {};
+    days.forEach(dateStr => { valGrid[s.id][dateStr] = meterUsedOnDay(meterMap, s.id, dateStr, allDates); });
+  });
+
+  const headCols = zoneSubs.map(s =>
+    `<th style="text-align:right;padding:6px 8px;min-width:70px">${s.id}<br><span style="font-weight:400;font-size:9px;color:var(--text-3)">${s.name}</span></th>`
+  ).join('');
+
+  const bodyRows = days.map(dateStr => {
+    const dnum = parseInt(dateStr.split('-')[2]);
+    let rowTotal = 0, rowHas = false;
+    const cells = zoneSubs.map(s => {
+      const v = valGrid[s.id][dateStr];
+      if(v !== null){ rowTotal += v; rowHas = true; }
+      return `<td style="text-align:right;padding:5px 8px">${fmtCell(v)}</td>`;
+    }).join('');
+    return `<tr>
+      <td style="padding:5px 8px;font-weight:600;color:var(--accent);position:sticky;left:0;background:var(--surface-1)">${dnum}</td>
+      ${cells}
+      <td style="text-align:right;padding:5px 8px;font-weight:700;color:var(--accent)">${rowHas ? Math.round(rowTotal).toLocaleString() : '<span style="color:var(--text-3)">—</span>'}</td>
+    </tr>`;
+  }).join('');
+
+  const totalsPerMeter = zoneSubs.map(s => days.reduce((a,dateStr) => a + (valGrid[s.id][dateStr] || 0), 0));
+  const grandTotal = totalsPerMeter.reduce((a,b) => a+b, 0);
+  const totCells = totalsPerMeter.map(t => `<td style="text-align:right;padding:7px 8px;font-weight:700">${Math.round(t).toLocaleString()}</td>`).join('');
+
+  zoneReportComputed = { zoneName, month, days, zoneSubs, valGrid, totalsPerMeter, grandTotal };
+
+  area.innerHTML = `
+    <div style="font-size:13px;font-weight:700;margin-bottom:8px;text-align:center">${zoneName} — รายมิเตอร์ · ${month}</div>
+    <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:11px;white-space:nowrap">
+        <thead><tr style="background:var(--surface-3)">
+          <th style="padding:6px 8px;position:sticky;left:0;background:var(--surface-3);text-align:left">วันที่</th>
+          ${headCols}
+          <th style="text-align:right;padding:6px 8px;color:var(--accent)">รวม</th>
+        </tr></thead>
+        <tbody>${bodyRows}</tbody>
+        <tfoot><tr style="background:var(--surface-3);border-top:2px solid var(--border)">
+          <td style="padding:7px 8px;font-weight:700;position:sticky;left:0;background:var(--surface-3)">รวม</td>
+          ${totCells}
+          <td style="text-align:right;padding:7px 8px;font-weight:700;color:var(--accent)">${Math.round(grandTotal).toLocaleString()}</td>
+        </tr></tfoot>
+      </table>
+    </div>
+    <div style="margin-top:6px;font-size:10px;color:var(--text-3)">หน่วย: kWh · — = ไม่มีข้อมูล · ${zoneSubs.length} มิเตอร์ใน Zone นี้</div>`;
+}
+
+async function exportZoneReportExcel(){
+  if(!zoneReportComputed) return toast('ยังไม่มีข้อมูล — เลือก Zone ก่อน','err');
+  try{ await ensureXLSX(); }catch(e){ return toast('โหลด Excel library ไม่ได้','err'); }
+  const { zoneName, month, days, zoneSubs, valGrid, totalsPerMeter, grandTotal } = zoneReportComputed;
+  const aoa = [];
+  const header = ['วันที่', ...zoneSubs.map(s => `${s.id} (${s.name})`), 'รวม'];
+  aoa.push(header);
+  days.forEach(dateStr => {
+    const dnum = parseInt(dateStr.split('-')[2]);
+    let rowTotal = 0;
+    const line = [dnum];
+    zoneSubs.forEach(s => { const v = valGrid[s.id][dateStr]; line.push(v===null?'':Math.round(v)); if(v!==null) rowTotal += v; });
+    line.push(Math.round(rowTotal));
+    aoa.push(line);
+  });
+  const totLine = ['รวม', ...totalsPerMeter.map(t => Math.round(t)), Math.round(grandTotal)];
+  aoa.push(totLine);
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = header.map(()=>({wch:14}));
+  XLSX.utils.book_append_sheet(wb, ws, zoneName.slice(0,28));
+  XLSX.writeFile(wb, `ZoneReport_${zoneName.replace(/[^\w]+/g,'_')}_${month}.xlsx`);
+  toast('✅ Export รายงานแล้ว','ok');
 }
 
 async function exportReportExcel(){
