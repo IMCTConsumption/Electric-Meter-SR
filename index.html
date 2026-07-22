@@ -730,19 +730,23 @@ i svg{
     <div id="report-area"><div class="section-empty">📋 เลือกเดือนเพื่อดูรายงาน</div></div>
   </div>
 
-  <!-- ── รายละเอียดรายมิเตอร์ แยกตาม Zone (ใช้เดือนเดียวกับตารางด้านบน) ── -->
+  <!-- ── รายละเอียดรายมิเตอร์ แยกตาม Zone (เลือกเดือนเป็นของตัวเอง แยกจากตารางด้านบน) ── -->
   <div class="card">
     <div class="card-title">🔎 รายละเอียดรายมิเตอร์แยกตาม Zone</div>
     <div class="f-2col">
       <div class="f-row">
+        <label class="f-label">เลือกเดือน</label>
+        <select class="f-input" id="zone-rep-month" onchange="loadZoneReport()"></select>
+      </div>
+      <div class="f-row">
         <label class="f-label">เลือก Zone</label>
         <select class="f-input" id="zone-rep-select" onchange="renderZoneReport()"></select>
       </div>
-      <div class="f-row" style="display:flex;align-items:flex-end">
-        <button class="btn btn-yellow btn-full" onclick="exportZoneReportExcel()">📥 Export Excel</button>
-      </div>
     </div>
-    <div id="zone-report-area"><div class="section-empty">📋 เลือกเดือน (ด้านบน) แล้วเลือก Zone เพื่อดูรายละเอียด</div></div>
+    <div class="f-row" style="display:flex;align-items:flex-end;margin-bottom:11px">
+      <button class="btn btn-yellow btn-full" onclick="exportZoneReportExcel()">📥 Export Excel</button>
+    </div>
+    <div id="zone-report-area"><div class="section-empty">📋 เลือกเดือนแล้วเลือก Zone เพื่อดูรายละเอียด</div></div>
   </div>
 
 </div>
@@ -1445,7 +1449,7 @@ async function init(){
 
 function renderAll(){
   if(!DEBUG_PERF){
-    renderZoneAreas(); renderData(); renderStats(); populateDDs(); updateBadge();
+    renderZoneAreas(); renderData(); renderStats(); populateDDs(); updateBadge(); populateZoneReportSelect();
     if(activeSub){ updateMeterSummary(); renderRecent(); }
     return;
   }
@@ -1457,6 +1461,7 @@ function renderAll(){
   seg('stats',     renderStats);
   seg('populateDDs', populateDDs);
   seg('updateBadge', updateBadge);
+  seg('populateZoneReportSelect', populateZoneReportSelect);
   if(activeSub){ seg('meterSummary', updateMeterSummary); seg('recent', renderRecent); }
   console.log(`⏱ renderAll TOTAL: ${(performance.now()-_t0).toFixed(2)} ms`);
 }
@@ -1472,7 +1477,7 @@ function goTab(name){
   if(tabEl) tabEl.classList.add('active');
   if(name === 'data')     { renderData(); renderStats(); }
   if(name === 'chart')    { populateDDs(); setSubQuick('30d'); buildCompareGroupOptions(); initG9Pickers(); renderG9Chart(); }
-  if(name === 'summary')  { buildMonthOptions(); populateZoneReportSelect(); loadReport(); }
+  if(name === 'summary')  { buildMonthOptions(); populateZoneReportSelect(); loadReport(); loadZoneReport(); }
   if(name === 'qr')       { renderQR(); }
   if(name === 'settings') { renderSubList(); renderCalendarList(); }
 }
@@ -1482,10 +1487,19 @@ function goTab(name){
    ════════════════════════════════════════════════════════════ */
 function buildMonthOptions(){
   const months = [...new Set(records.map(r => String(r.date).slice(0,7)))].filter(Boolean).sort().reverse();
-  const sel = document.getElementById('rep-month');
-  if(!sel) return;
   const MN = ['','ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
-  sel.innerHTML = months.map(m => { const [y,mm]=m.split('-'); return `<option value="${m}">${MN[parseInt(mm)]} ${y}</option>`; }).join('');
+  const optsHtml = months.map(m => { const [y,mm]=m.split('-'); return `<option value="${m}">${MN[parseInt(mm)]} ${y}</option>`; }).join('');
+  const sel = document.getElementById('rep-month');
+  if(sel) sel.innerHTML = optsHtml;
+  // เดือนของ "รายละเอียดรายมิเตอร์แยกตาม Zone" เป็น dropdown แยกอิสระของตัวเอง — เลือกดูคนละเดือน
+  // กับตารางรายงานหลักด้านบนได้ ใช้รายชื่อเดือนชุดเดียวกัน (มาจาก records ชุดเดียวกัน) แต่ค่าที่เลือก
+  // ไม่ผูกกัน แต่ละอันจดจำค่าที่เลือกไว้ของตัวเอง
+  const zoneSel = document.getElementById('zone-rep-month');
+  if(zoneSel){
+    const prevZoneMonth = zoneSel.value;
+    zoneSel.innerHTML = optsHtml;
+    if(prevZoneMonth && months.includes(prevZoneMonth)) zoneSel.value = prevZoneMonth;
+  }
 }
 
 let reportReqId = 0;
@@ -1513,9 +1527,10 @@ async function loadReport(){
   }
 }
 
-function buildMeterDayMap(){
+function buildMeterDayMap(raw){
+  const src = raw || reportRaw;
   const m = {};
-  reportRaw.forEach(r => { if(!m[r.subId]) m[r.subId]={}; m[r.subId][r.period]={firstKwh:r.firstKwh,lastKwh:r.lastKwh}; });
+  src.forEach(r => { if(!m[r.subId]) m[r.subId]={}; m[r.subId][r.period]={firstKwh:r.firstKwh,lastKwh:r.lastKwh}; });
   return m;
 }
 function meterUsedOnDay(meterMap, subId, dateStr, allDates){
@@ -1618,9 +1633,39 @@ function renderReport(month, lastDay){
 }
 
 /* ════════════ รายละเอียดรายมิเตอร์แยกตาม Zone ════════════
-   ใช้ reportRaw/meterMap เดียวกับตารางรายงานหลักด้านบน (โหลดมาแล้วจาก loadReport())
-   ไม่ยิง request ใหม่ — แค่ render มุมมองอื่นจากข้อมูลชุดเดียวกัน */
+   มีเดือนของตัวเอง (zone-rep-month) แยกอิสระจากตารางรายงานหลักด้านบน — เลือกดู
+   คนละเดือนกันได้ ข้อมูลอยู่ใน zoneReportRaw (ดึงผ่าน loadZoneReport()) ไม่ปนกับ
+   reportRaw ของตารางหลัก แต่ยังใช้ getSummaryCached() ร่วมกัน จึงยังได้ประโยชน์
+   จาก cache ถ้าเดือนนั้นเคยถูกโหลดจากที่ใดที่หนึ่งมาแล้ว */
 let zoneReportComputed = null;
+let zoneReportRaw = [];
+let zoneReportReqId = 0;
+
+/* ดึงข้อมูลของเดือนที่เลือกใน "รายละเอียดรายมิเตอร์แยกตาม Zone" โดยเฉพาะ — เป็นอิสระจาก
+   loadReport()/reportRaw ของตารางรายงานหลักด้านบน ผู้ใช้เลือกดูคนละเดือนกันได้
+   ใช้ getSummaryCached() ตัวเดียวกัน จึงยังได้ประโยชน์จาก cache ร่วมถ้าเคยโหลดเดือนนั้นมาแล้ว */
+async function loadZoneReport(){
+  const thisReq = ++zoneReportReqId;
+  const month = document.getElementById('zone-rep-month')?.value;
+  const area = document.getElementById('zone-report-area');
+  if(!month){ area.innerHTML = '<div class="section-empty">เลือกเดือน</div>'; zoneReportRaw = []; return; }
+  const [y,m] = month.split('-');
+  const dateFrom = `${month}-01`;
+  const lastDay  = new Date(parseInt(y), parseInt(m), 0).getDate();
+  const extDate  = new Date(parseInt(y), parseInt(m)-1, lastDay+7);
+  const dateTo   = `${extDate.getFullYear()}-${String(extDate.getMonth()+1).padStart(2,'0')}-${String(extDate.getDate()).padStart(2,'0')}`;
+  area.innerHTML = '<div class="section-empty">⏳ กำลังโหลด...</div>';
+  try{
+    const res = await getSummaryCached(dateFrom, dateTo, 'day');
+    if(thisReq !== zoneReportReqId) return; // stale request — discard
+    if(!res || !res.success) throw new Error(res?.error || 'Server error');
+    zoneReportRaw = res.summary || [];
+    renderZoneReport();
+  }catch(e){
+    if(thisReq !== zoneReportReqId) return;
+    area.innerHTML = `<div class="warn-box">❌ ${e.message}</div>`;
+  }
+}
 
 function populateZoneReportSelect(){
   const sel = document.getElementById('zone-rep-select');
@@ -1638,17 +1683,17 @@ function renderZoneReport(){
   const area = document.getElementById('zone-report-area');
   const zoneName = document.getElementById('zone-rep-select')?.value;
   if(!zoneName){ area.innerHTML = '<div class="section-empty">เลือก Zone</div>'; zoneReportComputed = null; return; }
-  if(!reportRaw.length){ area.innerHTML = '<div class="section-empty">📭 เลือกเดือนด้านบนก่อน (ยังไม่มีข้อมูลโหลดไว้)</div>'; zoneReportComputed = null; return; }
-  const month = document.getElementById('rep-month')?.value;
-  if(!month){ area.innerHTML = '<div class="section-empty">เลือกเดือนด้านบนก่อน</div>'; zoneReportComputed = null; return; }
+  if(!zoneReportRaw.length){ area.innerHTML = '<div class="section-empty">📭 เลือกเดือนก่อน (ยังไม่มีข้อมูลโหลดไว้)</div>'; zoneReportComputed = null; return; }
+  const month = document.getElementById('zone-rep-month')?.value;
+  if(!month){ area.innerHTML = '<div class="section-empty">เลือกเดือนก่อน</div>'; zoneReportComputed = null; return; }
 
   const zoneSubs = subs.filter(s => getCategoryOf(s) === zoneName);
   if(!zoneSubs.length){ area.innerHTML = '<div class="section-empty">ไม่มีมิเตอร์ใน Zone นี้</div>'; zoneReportComputed = null; return; }
 
   const [y,m] = month.split('-');
   const lastDay = new Date(parseInt(y), parseInt(m), 0).getDate();
-  const meterMap = buildMeterDayMap();
-  const allDates = [...new Set(reportRaw.map(r => r.period))].sort();
+  const meterMap = buildMeterDayMap(zoneReportRaw);
+  const allDates = [...new Set(zoneReportRaw.map(r => r.period))].sort();
   const days = [];
   for(let d = 1; d <= lastDay; d++) days.push(`${month}-${String(d).padStart(2,'0')}`);
 
