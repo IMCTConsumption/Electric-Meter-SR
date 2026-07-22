@@ -941,17 +941,21 @@ const REPORT_UTIL = [
    ข้อดี: sub ใหม่ที่เพิ่มเข้ามาทีหลังจะถูกจัดหมวดอัตโนมัติตาม zone ที่ตั้งไว้
    หมวดที่ zone ไม่ตรงกับรายการด้านล่าง จะตกไปอยู่ใน "อื่นๆ" (กันไม่ให้ตู้หายไปจากหน้าจอ) */
 const ZONE_CATEGORY_MAP = {
-  'BODY':        'BODY SHOP',
-  'PAINT':       'PAINT SHOP',
-  'LA':          'LA SHOP',
-  'UA':          'UA SHOP',
-  'PT7,8':       'PT7,8',
-  'FRAME':       'FRAME SHOP',
-  'OFFICE':      'HEAD OFFICE',
-  'FR':          'FR SHOP',
-  'OLD CANTEEN': 'OLD CANTEEN',
-  'AIR COMP':    'UTILITY PLANT',
-  'Utility':     'UTILITY PLANT'
+  // ⚠️ แก้ตาม zone จริงที่พบในชีท (ยืนยันด้วยข้อมูลจริงที่ผู้ใช้ส่งมา) — ของเดิมใช้ short code
+  // ('BODY','PAINT','LA','UA','FRAME','FR') เป็น key แต่ชีทจริงเก็บชื่อเต็มไว้แล้ว
+  // ('BODY SHOP','PAINT SHOP',...) ทำให้ 52/66 ตู้ไม่ match key ไหนเลย ตกไปที่ "อื่นๆ" ทั้งหมด
+  'BODY SHOP':     'BODY SHOP',
+  'PAINT SHOP':    'PAINT SHOP',
+  'LA SHOP':       'LA SHOP',
+  'UA SHOP':       'UA SHOP',
+  'PT7,8':         'PT7,8',
+  'FRAME SHOP':    'FRAME SHOP',
+  'OFFICE':        'HEAD OFFICE',
+  'FR SHOP':       'FR SHOP',
+  'OLD CANTEEN':   'OLD CANTEEN',
+  'AIR COMP':      'UTILITY PLANT',
+  'UTILITY PLANT': 'UTILITY PLANT',
+  'Utility':       'UTILITY PLANT'   // เผื่อ record เก่าที่อาจยังใช้ค่านี้อยู่
 };
 const LOAD_CATEGORIES = [
   { name:'BODY SHOP',     icon:'🏭' },
