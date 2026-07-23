@@ -55,8 +55,10 @@
 *,*::before,*::after{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{height:100%;overflow:hidden}
 body{font-family:var(--font-body);font-size:var(--fs-md);line-height:1.5;background:var(--bg);color:var(--text-1);display:flex;flex-direction:column;transition:background .25s,color .25s}
-::-webkit-scrollbar{width:3px}
-::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px}
+::-webkit-scrollbar{width:12px;height:12px}
+::-webkit-scrollbar-track{background:var(--surface-2)}
+::-webkit-scrollbar-thumb{background:var(--border-hi);border-radius:7px;border:2px solid var(--surface-2)}
+::-webkit-scrollbar-thumb:hover{background:var(--accent)}
 
 /* HEADER */
 .hdr{flex:0 0 auto;display:flex;align-items:center;padding:0 12px;gap:10px;height:52px;background:var(--surface-1);border-bottom:1px solid var(--border);z-index:50}
@@ -92,10 +94,10 @@ body{font-family:var(--font-body);font-size:var(--fs-md);line-height:1.5;backgro
 /* ══ FIX #2: TABS — clean, scrollable, consistent ══ */
 .tabs{flex:0 0 auto;background:var(--surface-1);border-bottom:1px solid var(--border);display:flex;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
 .tabs::-webkit-scrollbar{display:none}
-.tab{flex:0 0 auto;min-width:68px;padding:9px 10px 8px;text-align:center;font-size:var(--fs-xs);font-weight:700;color:var(--text-3);cursor:pointer;border-bottom:2px solid transparent;transition:var(--trans);white-space:nowrap;text-transform:uppercase;letter-spacing:.3px;user-select:none}
+.tab{flex:0 0 auto;min-width:84px;padding:13px 16px 11px;text-align:center;font-size:var(--fs-sm);font-weight:700;color:var(--text-3);cursor:pointer;border-bottom:3px solid transparent;transition:var(--trans);white-space:nowrap;text-transform:uppercase;letter-spacing:.3px;user-select:none}
 /* basic tabs fill full width */
 .tabs.basic-mode .tab{flex:1}
-.tab i{display:block;font-size:15px;margin-bottom:2px;font-style:normal}
+.tab i{display:block;font-size:20px;margin-bottom:3px;font-style:normal}
 .tab.active{color:var(--accent);border-bottom-color:var(--accent)}
 .tab:hover:not(.active){color:var(--text-2);background:var(--surface-2)}
 .tab.admin-tab{display:none}
@@ -195,7 +197,7 @@ tr:hover td{background:var(--surface-2)}
 
 /* ══ FIX #3: VERTICAL BAR CHART ══ */
 .vbar-scroll{overflow-x:auto;padding-bottom:6px;-webkit-overflow-scrolling:touch}
-.vbar-scroll::-webkit-scrollbar{height:10px}
+.vbar-scroll::-webkit-scrollbar{height:3px}
 .vbar-scroll::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
 .vbar-chart{display:flex;align-items:flex-end;gap:6px;min-width:max-content;padding:8px 4px 0}
 .vbar-col{display:flex;flex-direction:column;align-items:center;gap:3px;min-width:52px}
@@ -300,10 +302,10 @@ tr:hover td{background:var(--surface-2)}
    
 .tabs.admin-mode .tab{flex:1}
 .tab i svg{
-  width:18px;
-  height:18px;
+  width:24px;
+  height:24px;
   display:block;
-  margin:0 auto 2px;
+  margin:0 auto 3px;
 }
 .hdr-logo svg{width:18px;height:18px;color:var(--btn-pri-text)}
 .theme-btn svg{width:16px;height:16px;display:block}
@@ -903,6 +905,10 @@ i svg{
 </div>
 
 <div id="toast"></div>
+<button id="scroll-top-btn" onclick="scrollBodyToTop()" title="ขึ้นบนสุด"
+  style="display:none;position:fixed;bottom:22px;right:16px;width:46px;height:46px;border-radius:50%;
+  background:var(--btn-pri-bg);color:var(--btn-pri-text);border:none;box-shadow:var(--shadow-lg);
+  font-size:20px;font-weight:700;cursor:pointer;z-index:150;align-items:center;justify-content:center;">↑</button>
 
 <script>
 /* ════════════════════════════════════════════════════════════
@@ -2427,6 +2433,23 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 init();
+
+/* ════════════ SCROLL TO TOP ════════════
+   .body คือ scroll container เดียวที่มีเนื้อหาจริง (panel ที่ไม่ active ถูกซ่อนด้วย
+   display:none ไม่มี scroll ของตัวเอง) — ปุ่มโผล่มาเมื่อเลื่อนลงเกิน 300px แล้วกดเพื่อ
+   เลื่อนกลับขึ้นบนสุดแบบ smooth */
+function scrollBodyToTop(){
+  const body = document.querySelector('.body');
+  if(body) body.scrollTo({ top: 0, behavior: 'smooth' });
+}
+(function initScrollTopButton(){
+  const body = document.querySelector('.body');
+  const btn  = document.getElementById('scroll-top-btn');
+  if(!body || !btn) return;
+  body.addEventListener('scroll', () => {
+    btn.style.display = body.scrollTop > 300 ? 'flex' : 'none';
+  });
+})();
 
 /* ════════════════════════════════════════════════════════════
    APEXCHARTS SYSTEM — แทนฟังก์ชันกราฟเก่าทั้งหมด
