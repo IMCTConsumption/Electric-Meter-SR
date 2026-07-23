@@ -61,7 +61,7 @@ body{font-family:var(--font-body);font-size:var(--fs-md);line-height:1.5;backgro
 ::-webkit-scrollbar-thumb:hover{background:var(--accent)}
 
 /* HEADER */
-.hdr{flex:0 0 auto;display:flex;align-items:center;padding:0 12px;gap:10px;height:52px;background:var(--surface-1);border-bottom:1px solid var(--border);z-index:50}
+.hdr{flex:0 0 auto;display:flex;flex-wrap:wrap;align-items:center;padding:0 12px;gap:10px;min-height:52px;background:var(--surface-1);border-bottom:1px solid var(--border);z-index:50}
 .hdr-logo{width:34px;height:34px;background:var(--btn-pri-bg);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
 .hdr-text{flex:1;min-width:0;overflow:hidden}
 .hdr-title{font-size:clamp(12px,3.5vw,16px);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -92,7 +92,7 @@ body{font-family:var(--font-body);font-size:var(--fs-md);line-height:1.5;backgro
 .sync-banner.success{background:var(--green-dim);color:var(--green)}
 
 /* ══ FIX #2: TABS — clean, scrollable, consistent ══ */
-.tabs{flex:0 0 auto;background:var(--surface-1);border-bottom:1px solid var(--border);display:flex;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.tabs{flex-basis:100%;display:flex;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
 .tabs::-webkit-scrollbar{display:none}
 .tab{flex:0 0 auto;min-width:84px;padding:13px 16px 11px;text-align:center;font-size:var(--fs-sm);font-weight:700;color:var(--text-3);cursor:pointer;border-bottom:3px solid transparent;transition:var(--trans);white-space:nowrap;text-transform:uppercase;letter-spacing:.3px;user-select:none}
 /* basic tabs fill full width */
@@ -306,6 +306,21 @@ tr:hover td{background:var(--surface-2)}
   .sub-row-dec{font-size:11px}
   .chart-ctrl-label{font-size:12px}
   .ctrl-btn,.ctrl-date{font-size:13px}
+  /* ── Header + Tabs merge เป็นแถวเดียว (desktop เท่านั้น) ──
+     Mobile ใช้ DOM order ธรรมชาติ (logo→text→right→tabs) ให้ .hdr-right อยู่แถว 1
+     ต่อเมื่อ tabs wrap ไปแถว 2 — บน desktop เปลี่ยนมาใช้ flex order จัดใหม่ให้ tabs
+     โผล่ระหว่าง title กับปุ่มขวา โดยไม่ต้องย้าย DOM ซ้ำ (ย้ายแค่ตอน mobile→desktop
+     ด้วย CSS order เท่านั้น ไม่กระทบ mobile เพราะ order พวกนี้อยู่ใน media query นี้) */
+  .hdr{flex-wrap:nowrap}
+  .hdr-logo{order:1}
+  .hdr-text{order:2;flex:0 1 auto}
+  .tabs{order:3;flex:1 1 auto;min-width:0}
+  .hdr-right{order:4}
+  /* ปุ่มไม่ต้อง stretch เต็มพื้นที่แบบ mobile อีกแล้ว — โหมด basic (2 แท็บ) ก็ควรกระชับเท่าโหมด admin */
+  .tabs.basic-mode .tab{flex:0 0 auto}
+  .tab{min-width:0;padding:8px 14px;font-size:13px;border-bottom-width:2px}
+  .tab i{display:inline-block;font-size:16px;margin-bottom:0;vertical-align:-3px;margin-right:5px}
+  .tab i svg{width:16px;height:16px;margin:0}
 }
 @keyframes spin {
   from { transform: rotate(0deg); }
@@ -433,33 +448,39 @@ i svg{
     </button>
     <div class="sync-dot" id="sync-dot"></div>
   </div>
+  <!-- ── .tabs ย้ายมาเป็นลูกของ .hdr จริงๆ (ไม่ใช่ sibling อีกต่อไป) ──
+       Mobile (default): tabs มี flex-basis:100% + .hdr มี flex-wrap:wrap
+       → เห็นเป็น 2 แถวเหมือนเดิม (row1 logo/title/controls, row2 tabs) เพราะ DOM
+       order เดิม (logo→text→right→tabs) ทำให้ .hdr-right ยังอยู่แถว 1 ก่อน tabs
+       จะ wrap ไปแถว 2 เอง — ไม่ต้องกำหนด order ใดๆ บน mobile
+       Desktop (≥900px): .hdr เปลี่ยนเป็น flex-wrap:nowrap + ใช้ order จัดใหม่ให้
+       tabs โผล่ตรงกลางระหว่าง title กับปุ่มขวา แถวเดียวจริง ดู CSS media query -->
+  <div class="tabs basic-mode" id="tabs-bar">
+    <div class="tab active" onclick="goTab('entry')">
+      <i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></i>บันทึก
+    </div>
+    <div class="tab" onclick="goTab('data')">
+      <i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg></i>ข้อมูล
+    </div>
+    <div class="tab admin-tab" onclick="goTab('chart')">
+      <i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 14 3-4 3 3 4-6"/></svg></i>กราฟ
+    </div>
+    <div class="tab admin-tab" onclick="goTab('summary')">
+      <i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h8M8 9h2"/></svg></i>สรุป
+    </div>
+    <div class="tab admin-tab" onclick="goTab('qr')">
+      <i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3M21 14v.01M14 21h.01M17 21h4v-4"/></svg></i>QR
+    </div>
+    <div class="tab admin-tab" onclick="goTab('settings')">
+      <i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg></i>ตั้งค่า
+    </div>
+  </div>
 </div>
    
 
 <div class="sync-banner" id="sync-banner">
   <span id="sync-icon">⏳</span>
   <span id="sync-msg">กำลังโหลด...</span>
-</div>
-
-<div class="tabs basic-mode" id="tabs-bar">
-  <div class="tab active" onclick="goTab('entry')">
-    <i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></i>บันทึก
-  </div>
-  <div class="tab" onclick="goTab('data')">
-    <i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg></i>ข้อมูล
-  </div>
-  <div class="tab admin-tab" onclick="goTab('chart')">
-    <i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 14 3-4 3 3 4-6"/></svg></i>กราฟ
-  </div>
-  <div class="tab admin-tab" onclick="goTab('summary')">
-    <i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h8M8 9h2"/></svg></i>สรุป
-  </div>
-  <div class="tab admin-tab" onclick="goTab('qr')">
-    <i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3M21 14v.01M14 21h.01M17 21h4v-4"/></svg></i>QR
-  </div>
-  <div class="tab admin-tab" onclick="goTab('settings')">
-    <i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg></i>ตั้งค่า
-  </div>
 </div>
 
 <div class="body">
