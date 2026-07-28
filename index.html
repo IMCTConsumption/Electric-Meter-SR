@@ -774,6 +774,9 @@ i svg{
         <button class="btn btn-yellow btn-full" onclick="exportReportExcel()">📥 Export Excel</button>
       </div>
     </div>
+    <div class="f-row" style="display:flex;align-items:flex-end">
+      <button class="btn btn-primary btn-full" onclick="exportFullTemplateExcel()">📊 Export Excel (รูปแบบเต็ม — Data + รายมิเตอร์ทุก Zone)</button>
+    </div>
     <div id="report-area"><div class="section-empty">📋 เลือกเดือนเพื่อดูรายงาน</div></div>
   </div>
 
@@ -1341,7 +1344,7 @@ function safeDestroyChart(inst){
 }
 
 /* ════════════ LAZY CDN LOADER ════════════
-   โหลด library เมื่อใช้จริง ไม่โหลดตอนเปิดแอป (ลดเวลาโหลดหน้าแรก ~655KB)
+   โหลด library เมื่อใช้งานจริง ไม่โหลดตอนเปิดแอป (ลดเวลาโหลดหน้าแรก ~655KB)
    cache promise ต่อ url — เรียกซ้ำได้ไม่โหลดซ้ำ
 */
 const _scriptPromises = {};
@@ -1359,12 +1362,20 @@ function loadScript(url){
 const CDN = {
   qrcode:     'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js',
   xlsx:       'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
-  apexcharts: 'https://cdn.jsdelivr.net/npm/apexcharts@3.50.0/dist/apexcharts.min.js'
+  apexcharts: 'https://cdn.jsdelivr.net/npm/apexcharts@3.50.0/dist/apexcharts.min.js',
+  exceljs:    'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js'
 };
 // โหลดเฉพาะเมื่อยังไม่มี global (กัน double-load)
 function ensureQRCode(){    return (typeof QRCode!=='undefined')    ? Promise.resolve() : loadScript(CDN.qrcode); }
 function ensureXLSX(){      return (typeof XLSX!=='undefined')      ? Promise.resolve() : loadScript(CDN.xlsx); }
 function ensureApex(){      return (typeof ApexCharts!=='undefined') ? Promise.resolve() : loadScript(CDN.apexcharts); }
+// ExcelJS — ใช้เฉพาะ export ที่ต้องการ styling เต็มรูปแบบ (merge/font/border/fill)
+// เหตุผลที่แยกจาก XLSX (SheetJS): SheetJS community build เขียน merge cells /
+// ความกว้างคอลัมน์ / number format ได้ แต่ "เขียน" สไตล์เซลล์ (font/fill/border)
+// ไม่รองรับในรุ่นฟรี (เป็นฟีเจอร์ของ SheetJS Pro เท่านั้น) — ถ้าจะให้ไฟล์ export
+// มีหน้าตาแบบมีเส้นขอบ/หัวข้อตัวหนา/พื้นหลังสี ต้องใช้ ExcelJS ซึ่ง open-source
+// เต็มรูปแบบและรองรับ cell styling ทั้งหมด
+function ensureExcelJS(){   return (typeof ExcelJS!=='undefined')    ? Promise.resolve() : loadScript(CDN.exceljs); }
 
 function setSyncStatus(status, msg){
   const dot = document.getElementById('sync-dot');
@@ -1861,6 +1872,275 @@ async function exportReportExcel(){
   XLSX.utils.book_append_sheet(wb, ws, month);
   XLSX.writeFile(wb, `Report_${month}.xlsx`);
   toast('✅ Export รายงานแล้ว','ok');
+}
+
+/* ════════════════════════════════════════════════════════════
+   EXPORT EXCEL — รูปแบบเต็ม (ตาม Excel ต้นฉบับที่ใช้มือกรอกทุกเดือน)
+   ใช้ ExcelJS แทน SheetJS/XLSX เฉพาะจุดนี้ เพราะต้องการ merge cell,
+   ตัวหนา, เส้นขอบ, พื้นหลังสี ซึ่ง SheetJS รุ่นฟรีเขียนไม่ได้
+
+   โครงสร้างไฟล์ที่ได้:
+   - ชีท "Data": ตารางสรุปรายวันทั้งเดือน (เหมือนตาราง "รายงานการใช้ไฟฟ้า
+     รายเดือน" ที่เห็นในแอปอยู่แล้ว) — DATE, 9 กลุ่มหลัก, UTILITY(11 กลุ่มย่อย),
+     UTILITY PLANT, TOTAL, คอลัมน์ "วันหยุด" (H = วันหยุดตามปฏิทินวันทำงาน)
+   - ชีทละ Zone (BODY SHOP, PAINT SHOP, ... ) แบ่งเป็นชีทย่อยครั้งละไม่เกิน
+     4 มิเตอร์ต่อชีท (ปรับได้ที่ METER_SHEET_CHUNK) แต่ละมิเตอร์มี 4 คอลัมน์
+     DATE / METER (ค่ามิเตอร์สะสมของวันนั้น) / KW-H (ผลต่างดิบ ก่อนคูณตัวคูณ)
+     / COST (= KW-H ดิบ × ตัวคูณ ตามที่ยืนยัน — เท่ากับค่า "ใช้ไป" ปกติของแอป)
+
+   ข้อจำกัดที่ทราบและเป็นการตัดสินใจโดยตั้งใจ (ไม่ใช่บั๊ก):
+   - ฟอนต์ AngsanaUPC ขนาด 22-36pt ในไฟล์ต้นฉบับเป็นของที่ออกแบบมาสำหรับ
+     พิมพ์กระดาษ และไม่การันตีว่าเครื่องทุกเครื่องจะมีฟอนต์นี้ติดตั้งไว้ —
+     ใช้ Tahoma ตัวหนา + เส้นขอบบาง + พื้นหลังสีแทน เพื่อให้เปิดได้ปกติทุก
+     เครื่อง โครงสร้างข้อมูล/merge/หัวตารางเหมือนต้นฉบับ 100% แต่ font ต่างกัน
+   - คอลัมน์ "COST" ไม่ใช่มูลค่าเงินบาท (ไม่มีข้อมูลอัตราค่าไฟในระบบ) — ตาม
+     ที่ยืนยันแล้วว่า "cost = kwh x multiplier" คือค่า kWh ที่คูณตัวคูณ CT
+     ratio แล้ว (เท่ากับ field "used" ที่แอปใช้อยู่ทั่วไป) ไม่ใช่ค่าไฟบาท/หน่วย
+   - แถวพิเศษท้ายไฟล์ต้นฉบับ (UNIT COST / COST / KWH/U' / B/U') ไม่ได้ทำ
+     เพราะต้องใช้อัตราค่าไฟ (บาท/kWh) ซึ่งไม่มีในระบบ — ถ้าต้องการ แจ้งมาได้
+     จะเพิ่มช่องให้กรอกอัตราแล้วคำนวณให้
+   ════════════════════════════════════════════════════════════ */
+
+const TH_MONTH_FULL = ['','มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
+const EN_MONTH_FULL = ['','January','February','March','April','May','June','July','August','September','October','November','December'];
+const METER_SHEET_CHUNK = 4; // จำนวนมิเตอร์ต่อชีทย่อย (ต้นฉบับใช้ 2-5 ไม่คงที่ — ตั้งเป็นค่าคงที่เพื่อคาดเดาผลลัพธ์ได้)
+
+// เหมือน meterUsedOnDay (ฟังก์ชันเดิมที่มีอยู่แล้ว) แต่คืนรายละเอียดครบ:
+// ค่ามิเตอร์ดิบของวันนั้น (meter), kWh ดิบที่ใช้ไปก่อนคูณตัวคูณ (kwh),
+// และ cost = kWh ดิบ × ตัวคูณ (เท่ากับ field "used" ปกติของแอป)
+function meterDetailOnDay(meterMap, subId, dateStr, allDates){
+  const cur = meterMap[subId]?.[dateStr];
+  if(!cur) return null;
+  const sub  = subs.find(s => s.id === subId);
+  const mult = sub?.multiplier !== undefined ? parseFloat(sub.multiplier) : 1;
+  const idx  = allDates.indexOf(dateStr);
+  let raw = null;
+  for(let k = idx+1; k < allDates.length; k++){
+    const next = meterMap[subId]?.[allDates[k]];
+    if(next){ raw = Math.max(0, next.firstKwh - cur.firstKwh); break; }
+  }
+  if(raw === null) raw = Math.max(0, cur.lastKwh - cur.firstKwh);
+  return { meter: cur.firstKwh, kwh: raw, cost: raw * mult };
+}
+
+async function buildDataSheetExcelJS(workbook, rc){
+  const { month, rows, totals } = rc;
+  const [yy, mm] = month.split('-').map(Number);
+  const ws = workbook.addWorksheet('Data', { views:[{ state:'frozen', ySplit:4 }] });
+
+  const mainCols = REPORT_MAIN, utilCols = REPORT_UTIL;
+  const lastMainCol  = 1 + mainCols.length;              // 10
+  const utilStart    = lastMainCol + 1;                  // 11
+  const utilEnd      = utilStart + utilCols.length - 1;  // 21
+  const utilPlantCol = utilEnd + 1;                      // 22
+  const totalCol     = utilPlantCol + 1;                 // 23
+  const holCol       = totalCol + 1;                     // 24
+
+  ws.getColumn(1).width = 14;
+  for(let c = 2; c <= holCol; c++) ws.getColumn(c).width = 12;
+  ws.getColumn(holCol).width = 9;
+
+  ws.mergeCells(1,1,1,holCol);
+  const title = ws.getCell(1,1);
+  title.value = `รายละเอียดปริมาณการใช้ไฟฟ้าแต่ละ SUBSTATION   ประจำเดือน ${TH_MONTH_FULL[mm]} ${yy}`;
+  title.font = { name:'Tahoma', size:16, bold:true };
+  title.alignment = { horizontal:'center', vertical:'middle' };
+  ws.getRow(1).height = 26;
+
+  ws.mergeCells(2,1,3,1); ws.getCell(2,1).value = 'DATE';
+  mainCols.forEach((c,i) => { const col = 2+i; ws.mergeCells(2,col,3,col); ws.getCell(2,col).value = c.name; });
+  ws.mergeCells(2, utilStart, 2, utilEnd); ws.getCell(2, utilStart).value = 'UTILITY';
+  utilCols.forEach((c,i) => { ws.getCell(3, utilStart+i).value = c.name; });
+  ws.mergeCells(2, utilPlantCol, 3, utilPlantCol); ws.getCell(2, utilPlantCol).value = 'UTILITY PLANT';
+  ws.mergeCells(2, totalCol, 3, totalCol); ws.getCell(2, totalCol).value = 'TOTAL';
+  ws.mergeCells(2, holCol, 3, holCol); ws.getCell(2, holCol).value = 'วันหยุด';
+
+  for(let r = 2; r <= 3; r++){
+    for(let c = 1; c <= holCol; c++){
+      const cell = ws.getCell(r,c);
+      cell.font = { name:'Tahoma', size:11, bold:true, color:{argb:'FFFFFFFF'} };
+      cell.alignment = { horizontal:'center', vertical:'middle', wrapText:true };
+      cell.fill = { type:'pattern', pattern:'solid', fgColor:{argb:'FF1F2C3F'} };
+      cell.border = { top:{style:'thin'}, bottom:{style:'thin'}, left:{style:'thin'}, right:{style:'thin'} };
+    }
+  }
+  ws.getRow(2).height = 20; ws.getRow(3).height = 20;
+
+  for(let c = 2; c <= totalCol; c++){
+    const cell = ws.getCell(4,c);
+    cell.value = '(KW-H.)';
+    cell.font = { name:'Tahoma', size:9, italic:true, color:{argb:'FF8FA8C8'} };
+    cell.alignment = { horizontal:'center' };
+  }
+  ws.getRow(4).height = 16;
+
+  let r = 5;
+  rows.forEach(row => {
+    const d = new Date(row.dateStr+'T00:00:00');
+    ws.getCell(r,1).value = `${d.getDate()} ${EN_MONTH_FULL[d.getMonth()+1]} ${String(d.getFullYear()).slice(-2)}`;
+    ws.getCell(r,1).alignment = { horizontal:'center' };
+    mainCols.forEach((c,i) => { const v=row.cells[c.key]; const cell=ws.getCell(r,2+i); cell.value=v===null?null:Math.round(v); cell.numFmt='#,##0'; });
+    utilCols.forEach((c,i) => { const v=row.cells[c.key]; const cell=ws.getCell(r,utilStart+i); cell.value=v===null?null:Math.round(v); cell.numFmt='#,##0'; });
+    ws.getCell(r,utilPlantCol).value = Math.round(row.cells['UTILITY']||0); ws.getCell(r,utilPlantCol).numFmt='#,##0';
+    ws.getCell(r,totalCol).value = Math.round(row.cells['TOTAL']||0); ws.getCell(r,totalCol).numFmt='#,##0';
+    const isHol = getDayType(row.dateStr) === 'holiday';
+    const holCell = ws.getCell(r,holCol);
+    holCell.value = isHol ? 'H' : '';
+    holCell.alignment = { horizontal:'center' };
+    if(isHol){ for(let c=1;c<=holCol;c++) ws.getCell(r,c).fill = { type:'pattern', pattern:'solid', fgColor:{argb:'FFFDE9D9'} }; }
+    r++;
+  });
+
+  const totalRow = r;
+  ws.getCell(totalRow,1).value = 'TOTAL'; ws.getCell(totalRow,1).font = { bold:true };
+  mainCols.forEach((c,i) => { const cell=ws.getCell(totalRow,2+i); cell.value=Math.round(totals[c.key]); cell.numFmt='#,##0'; cell.font={bold:true}; });
+  utilCols.forEach((c,i) => { const cell=ws.getCell(totalRow,utilStart+i); cell.value=Math.round(totals[c.key]); cell.numFmt='#,##0'; cell.font={bold:true}; });
+  ws.getCell(totalRow,utilPlantCol).value = Math.round(totals['UTILITY']); ws.getCell(totalRow,utilPlantCol).numFmt='#,##0'; ws.getCell(totalRow,utilPlantCol).font={bold:true};
+  ws.getCell(totalRow,totalCol).value = Math.round(totals['TOTAL']); ws.getCell(totalRow,totalCol).numFmt='#,##0'; ws.getCell(totalRow,totalCol).font={bold:true};
+  for(let c = 1; c <= holCol; c++) ws.getCell(totalRow,c).border = { top:{style:'double'} };
+
+  return ws;
+}
+
+function buildOneMeterSheet(ws, meters, days, meterMap, allDates, month){
+  const perBlock  = 4; // DATE / METER / KW-H / COST
+  const totalCols = meters.length * perBlock;
+  for(let c = 1; c <= totalCols; c++) ws.getColumn(c).width = 12;
+
+  const [yy, mm] = month.split('-').map(Number);
+  ws.mergeCells(1,1,1,totalCols);
+  const t = ws.getCell(1,1);
+  t.value = `รายละเอียดปริมาณการใช้ไฟฟ้าแต่ละ SUBSTATION   ประจำเดือน ${TH_MONTH_FULL[mm]} ${yy}`;
+  t.font = { name:'Tahoma', size:14, bold:true };
+  t.alignment = { horizontal:'center', vertical:'middle' };
+  ws.getRow(1).height = 24;
+
+  meters.forEach((s,i) => {
+    const base = i*perBlock + 1;
+    ws.mergeCells(2, base, 2, base+3);
+    const c = ws.getCell(2, base);
+    c.value = `${s.id} — ${s.name}`;
+    c.font = { bold:true, color:{argb:'FFFFFFFF'} };
+    c.alignment = { horizontal:'center' };
+    c.fill = { type:'pattern', pattern:'solid', fgColor:{argb:'FF1F2C3F'} };
+  });
+  meters.forEach((s,i) => {
+    const base = i*perBlock + 1;
+    ['DATE','METER','KW-H','COST'].forEach((lbl,j) => {
+      const c = ws.getCell(3, base+j);
+      c.value = lbl;
+      c.font = { bold:true, size:10 };
+      c.alignment = { horizontal:'center' };
+      c.border = { top:{style:'thin'}, bottom:{style:'thin'} };
+    });
+  });
+  ws.getRow(2).height = 18; ws.getRow(3).height = 16;
+
+  let r = 4;
+  const totalsPerMeter = meters.map(() => ({ kwh:0, cost:0 }));
+  days.forEach(dateStr => {
+    const dnum = parseInt(dateStr.split('-')[2]);
+    meters.forEach((s,i) => {
+      const base = i*perBlock + 1;
+      const det = meterDetailOnDay(meterMap, s.id, dateStr, allDates);
+      ws.getCell(r, base).value = dnum;
+      ws.getCell(r, base).alignment = { horizontal:'center' };
+      ws.getCell(r, base+1).value = det ? det.meter : null;
+      ws.getCell(r, base+1).numFmt = '#,##0.####';
+      ws.getCell(r, base+2).value = det ? Math.round(det.kwh) : null;
+      ws.getCell(r, base+2).numFmt = '#,##0';
+      ws.getCell(r, base+3).value = det ? Math.round(det.cost) : null;
+      ws.getCell(r, base+3).numFmt = '#,##0';
+      if(det){ totalsPerMeter[i].kwh += det.kwh; totalsPerMeter[i].cost += det.cost; }
+    });
+    r++;
+  });
+
+  ws.getCell(r,1).value = 'TOTAL'; ws.getCell(r,1).font = { bold:true };
+  meters.forEach((s,i) => {
+    const base = i*perBlock + 1;
+    ws.getCell(r, base+2).value = Math.round(totalsPerMeter[i].kwh); ws.getCell(r, base+2).font = { bold:true }; ws.getCell(r, base+2).numFmt = '#,##0';
+    ws.getCell(r, base+3).value = Math.round(totalsPerMeter[i].cost); ws.getCell(r, base+3).font = { bold:true }; ws.getCell(r, base+3).numFmt = '#,##0';
+  });
+  for(let c = 1; c <= totalCols; c++) ws.getCell(r,c).border = { top:{style:'double'} };
+}
+
+async function buildMeterSheetsExcelJS(workbook, month, lastDay, meterMap, allDates){
+  const days = [];
+  for(let d = 1; d <= lastDay; d++) days.push(`${month}-${String(d).padStart(2,'0')}`);
+
+  const grouped = {};
+  LOAD_CATEGORIES.forEach(c => grouped[c.name] = []);
+  subs.forEach(s => { const cat = getCategoryOf(s); if(!grouped[cat]) grouped[cat] = []; grouped[cat].push(s); });
+
+  const usedNames = new Set(['Data']);
+  function safeSheetName(base){
+    let name = base.replace(/[\[\]\*\/\\\?:]/g,'').slice(0,31);
+    let n = name, i = 2;
+    while(usedNames.has(n)){ n = (name.slice(0,28)+' '+i).slice(0,31); i++; }
+    usedNames.add(n);
+    return n;
+  }
+
+  LOAD_CATEGORIES.forEach(cat => {
+    const list = grouped[cat.name];
+    if(!list.length) return;
+    for(let off = 0; off < list.length; off += METER_SHEET_CHUNK){
+      const chunk = list.slice(off, off+METER_SHEET_CHUNK);
+      const partLabel = list.length > METER_SHEET_CHUNK ? ` (${off/METER_SHEET_CHUNK+1})` : '';
+      const sheetName = safeSheetName(cat.name + partLabel);
+      const ws = workbook.addWorksheet(sheetName, { views:[{ state:'frozen', ySplit:3 }] });
+      buildOneMeterSheet(ws, chunk, days, meterMap, allDates, month);
+    }
+  });
+}
+
+async function exportFullTemplateExcel(){
+  const month = document.getElementById('rep-month')?.value;
+  if(!month) return toast('เลือกเดือนก่อน (ในการ์ด "รายงานการใช้ไฟฟ้ารายเดือน")','err');
+  try{ await ensureExcelJS(); }catch(e){ return toast('โหลด ExcelJS ไม่ได้: '+e.message,'err'); }
+
+  toast('⏳ กำลังสร้างไฟล์ Excel เต็มรูปแบบ...','warn');
+
+  // ใช้ reportComputed ที่โหลดไว้แล้วถ้าตรงกับเดือนที่เลือก — ไม่เรียก loadReport() ซ้ำ
+  // (loadReport() เดิมมี summaryCache กันการยิง network ซ้ำอยู่แล้ว แต่ยังเสีย CPU
+  // re-render ตาราง "รายงานการใช้ไฟฟ้ารายเดือน" ทิ้งเปล่าๆ ทุกครั้งที่กด Export
+  // ถ้าเดือนตรงกันอยู่แล้วไม่มีเหตุผลต้องทำซ้ำ)
+  // ข้อแลกเปลี่ยนที่ควรทราบ: ถ้ามีการบันทึกค่าใหม่จาก "เครื่องอื่น" หลังจากหน้านี้
+  // โหลดเสร็จ (ไม่ผ่าน invalidateSummaryCache บนเครื่องนี้) การข้าม loadReport() จะ
+  // export ข้อมูลที่ยังไม่ใหม่ที่สุด — เป็นทเรดออฟความเร็ว/ความสดที่มีอยู่แล้วทั่วแอป
+  // (หน้า "รายงาน" เองก็ไม่ auto-refresh ข้ามเครื่องเช่นกัน) ไม่ใช่ปัญหาใหม่จาก patch นี้
+  if(!reportComputed || reportComputed.month !== month){
+    await loadReport();
+  }
+  if(!reportComputed || reportComputed.month !== month){
+    return toast('โหลดข้อมูลเดือนนี้ไม่สำเร็จ ลองกด Refresh แล้วลองใหม่','err');
+  }
+
+  const [yy, mm] = month.split('-').map(Number);
+  const lastDay  = new Date(yy, mm, 0).getDate();
+  const meterMap = buildMeterDayMap(reportRaw);
+  const allDates = [...new Set(reportRaw.map(r => r.period))].sort();
+
+  try{
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'Substation SR Plant Logger';
+    workbook.created = new Date();
+
+    await buildDataSheetExcelJS(workbook, reportComputed);
+    await buildMeterSheetsExcelJS(workbook, month, lastDay, meterMap, allDates);
+
+    const buf  = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buf], { type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = `7_Sub_ประจำเดือน_${TH_MONTH_FULL[mm]}_${yy}.xlsx`; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+    toast(`✅ Export สำเร็จ (${workbook.worksheets.length} ชีท)`,'ok');
+  }catch(e){
+    console.error(e);
+    toast('❌ สร้างไฟล์ไม่สำเร็จ: ' + e.message,'err');
+  }
 }
 
 /* ════════════ กราฟเทียบต่อกลุ่ม ════════════ */
