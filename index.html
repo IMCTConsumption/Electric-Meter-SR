@@ -1033,10 +1033,15 @@ function getCategoryOf(sub){
 const API_URL     = 'https://script.google.com/macros/s/AKfycbwnMG0pAZGZo4yZfQtioQ-Uj1hP8ZbrWz5PfNlLuWc6XRl4kU69pyJUpO-pfhsiB1du7w/exec';
 const QR_BASE_URL = 'https://github.com/IMCTConsumption/Electric-Meter-SR/';
 const ABNORMAL_MULTIPLIER = 5;
+// Abuse-prevention only (matches DEVICE_KEY constant in Code.gs) — NOT real auth,
+// since anyone reading this source can read this value too. It just raises the
+// cost of casual bot/script hammering of the saveRecord endpoint. If you change
+// the value in Code.gs, this must be updated to match or all saves will fail.
+const DEVICE_KEY = 'SR-ELEC-2026-CHANGE-ME';
 
 /* ───────── STATE ───────── */
 let subs                   = Array.isArray(jLoad('subs'))     ? jLoad('subs')     : [];
-let records                = Array.isArray(jLoad('records'))  ? jLoad('records')  : [];
+let records                = [];  // Aug 2026 patch: never hydrated from localStorage — see persist() comment. Populated fresh per admin session only.
 let workCalendar           = Array.isArray(jLoad('calendar')) ? jLoad('calendar') : [];
 let filteredRecords        = [];
 let currentPage            = 1;
@@ -1048,7 +1053,8 @@ let editSubIndex           = null;
 let isConnected             = false;
 let currentEditingRecordId = null;
 let currentUser            = '';
-let reportRaw              = [];
+let sessionToken            = null;
+let reportRaw               = [];
 let reportComputed         = null;
 let compareMode            = 'day';
 
@@ -1072,8 +1078,14 @@ function esc(str){
     .replace(/'/g, '&#39;');
 }
 function persist(){
+  // NOTE (Aug 2026 patch): `records` is deliberately NOT persisted to
+  // localStorage anymore. It's the sensitive full consumption dataset,
+  // only ever populated for an authenticated admin session via the
+  // token-gated getRawRecords action — keeping it in-memory-only means
+  // closing the tab (even without clicking logout) leaves nothing behind
+  // on the device. subs/calendar are config data, not consumption data,
+  // so those are fine to cache for faster reloads.
   localStorage.setItem('subs',     JSON.stringify(subs));
-  localStorage.setItem('records',  JSON.stringify(records));
   localStorage.setItem('calendar', JSON.stringify(workCalendar));
 }
 function fmtDate(d){
@@ -1112,6 +1124,9 @@ function setNow(){
   if(ed) ed.value = n.toISOString().split('T')[0];
   if(et) et.value = n.toTimeString().slice(0,5);
 }
+// getLastKwh/getSubRecs operate on the bulk `records` array — only meaningful
+// in admin mode (where getRawRecords populated it fully). The basic-mode entry
+// screen uses activeSubRecent (scoped, per-meter fetch) instead — see selectSub().
 function getLastKwh(subId){
   const sorted = records.filter(r => r.subId === subId)
     .sort((a,b) => (`${b.date} ${b.time||'00:00'}`).localeCompare(`${a.date} ${a.time||'00:00'}`));
@@ -1127,6 +1142,12 @@ function logout(){
   if(!confirm('ออกจากระบบและกลับไปหน้าเลือกโหมด?')) return;
   localStorage.removeItem('loginMode');
   currentUser = '';
+  sessionToken = null;
+  // Clear the full-records cache from memory AND localStorage — it was only
+  // loaded because an admin session was active (getRawRecords is token-gated).
+  // Leaving it behind after logout would defeat the point of gating it.
+  records = [];
+  localStorage.removeItem('records');
   document.getElementById('login-admin').style.display  = 'none';
   document.getElementById('login-choose').style.display = 'block';
   document.getElementById('login-err').style.display    = 'none';
@@ -1136,6 +1157,8 @@ function logout(){
 }
 function enterBasic(){
   currentUser = '';
+  sessionToken = null;
+  records = []; // defensive — ensure no admin-session data lingers in memory
   applyAppMode('basic');
   localStorage.setItem('loginMode','basic');
   closeLoginGate();
@@ -1166,9 +1189,13 @@ async function handleLogin(){
     const res = await apiPost({ action:'login', username:userVal, password:passVal });
     if(res && res.success && res.role === 'admin'){
       currentUser = res.name || userVal;
+      sessionToken = res.token || null;
       applyAppMode('admin');
       localStorage.removeItem('loginMode');
-      closeLoginGate(); renderAll();
+      closeLoginGate();
+      loginBtn.innerHTML = '⏳ กำลังโหลดข้อมูล...';
+      await loadAdminRecords();
+      renderAll();
     } else if(res && res.success){
       errDiv.style.display = 'block'; errDiv.innerText = '⚠️ บัญชีนี้ไม่มีสิทธิ์แอดมิน'; shakeInputs();
     } else {
@@ -1288,6 +1315,25 @@ async function apiPost(body, retries = 2){
   }
 }
 
+/* ════════════ SESSION-AWARE MUTATION HELPER ════════════
+   ครอบ apiPost สำหรับ action ที่ต้องใช้สิทธิ์ admin (แก้/ลบ record, แก้ config
+   ตู้, แก้ปฏิทิน) — แนบ token ให้อัตโนมัติ และถ้า backend ตอบ success:false
+   (เช่น session หมดอายุ) จะแจ้งเตือนและพากลับไปหน้า login แทนที่จะปล่อยผ่าน
+   เงียบๆ เหมือนโค้ดเดิม (ดู "gap" ที่เคยเคยคุยกันไว้ก่อนแพตช์นี้) */
+async function apiPostAuthed(body){
+  const res = await apiPost(Object.assign({}, body, { token: sessionToken }));
+  if(!res || res.success === false){
+    const msg = (res && res.error) || 'การดำเนินการล้มเหลว';
+    toast('❌ ' + msg, 'err');
+    if(res && /session|เข้าสู่ระบบ/i.test(res.error || '')){
+      sessionToken = null;
+      setTimeout(() => { logout(); }, 1200);
+    }
+    throw new Error(msg);
+  }
+  return res;
+}
+
 /* ════════════ SUMMARY API CACHE ════════════
    Cache getMonthlySummary โดย key = dateFrom|dateTo|granularity
    ทั้ง 3 กราฟ (report, g9, cmp) ใช้ endpoint เดียวกัน จึงแชร์ cache ได้
@@ -1321,7 +1367,11 @@ async function getSummaryCached(dateFrom, dateTo, granularity){
     return summaryCache[key];
   }
   const _t0 = (DEBUG_PERF && performance.now()) || 0;
-  const res = await apiPost({ action:'getMonthlySummary', dateFrom:qFrom, dateTo:qTo, granularity });
+  // Aug 2026 patch: getMonthlySummary is now admin-gated server-side (it's
+  // aggregate consumption data — exactly what this whole redesign protects),
+  // so this must go through apiPostAuthed to attach the session token. Only
+  // reachable from admin-only UI (Charts/Reports tabs) anyway.
+  const res = await apiPostAuthed({ action:'getMonthlySummary', dateFrom:qFrom, dateTo:qTo, granularity });
   if(DEBUG_PERF) console.log(`⏱ getSummaryCached [MISS→network] ${key}: ${(performance.now()-_t0).toFixed(0)} ms`);
   if(res && res.success) summaryCache[key] = res;  // cache เฉพาะ response ที่สำเร็จ
   return res;
@@ -1393,6 +1443,35 @@ function setSyncStatus(status, msg){
     setTimeout(() => { ban.className = 'sync-banner'; }, 2500);
   }
 }
+/* ════════════ SCOPED DATA LOADERS (Aug 2026 patch) ════════════
+   doGet() no longer returns `records` — see comments in Code.gs. Basic-mode
+   entry now fetches only what it needs, scoped to one meter at a time.
+   Admin mode additionally loads the full dataset via the token-gated
+   getRawRecords action once logged in. */
+let meterStatus = {};      // subId -> boolean (has this meter ever been recorded)
+let activeSubRecent = [];  // scoped recent records for the currently open meter, newest first
+
+async function loadMeterStatus(){
+  try{
+    const res = await apiPost({ action:'getMeterStatus', subIds: subs.map(s => s.id) });
+    if(res && res.success && res.status) meterStatus = res.status;
+  }catch(e){ console.warn('⚠️ โหลดสถานะมิเตอร์ไม่ได้:', e.message); }
+}
+
+async function loadAdminRecords(){
+  try{
+    const res = await apiPostAuthed({ action:'getRawRecords' });
+    records = computeUsed(res.records || []);
+    persist();
+  }catch(e){ /* apiPostAuthed already surfaced the error toast */ }
+}
+
+async function loadRecentForSub(subId, limit){
+  const res = await apiPost({ action:'getRecentRecords', subId, limit: limit || 5, deviceKey: DEVICE_KEY });
+  if(!res || !res.success) throw new Error((res && res.error) || 'โหลดประวัติมิเตอร์ไม่ได้');
+  return res.records || [];
+}
+
 function loadFromServer(){
   const _plApi = perfLabel('loadFromServer:api'); perfStart(_plApi);
   return fetch(API_URL)
@@ -1402,18 +1481,20 @@ function loadFromServer(){
       const _plJson = perfLabel('loadFromServer:jsonParse'); perfStart(_plJson);
       return res.json().then(data => { perfEnd(_plJson); return data; });
     })
-    .then(data => {
+    .then(async data => {
       if(!data || data.status === 'error') throw new Error(data?.message || 'Server error');
       if(data.subs     && Array.isArray(data.subs))     subs         = data.subs;
-      if(data.records  && Array.isArray(data.records))  records      = computeUsed(data.records);
       if(data.calendar && Array.isArray(data.calendar)) workCalendar = data.calendar;
-      persist(); isConnected = true; invalidateSummaryCache('loadFromServer'); renderAll();
+      persist(); isConnected = true; invalidateSummaryCache('loadFromServer');
+      await loadMeterStatus();
+      if(appMode === 'admin' && sessionToken) await loadAdminRecords();
+      renderAll();
       // ✅ ถ้ากำลังอยู่หน้ากรอก อัปเดตปุ่ม save ให้เป็นออนไลน์
       if(activeSub){
         const sb = document.getElementById('save-btn');
         if(sb && !sb.disabled){ sb.innerHTML = '✅ บันทึกข้อมูล'; }
       }
-      console.log(`✅ Sync — ${subs.length} subs, ${records.length} records, ${workCalendar.length} cal`);
+      console.log(`✅ Sync — ${subs.length} subs, ${workCalendar.length} cal${appMode==='admin' ? ', '+records.length+' records' : ''}`);
     })
     .catch(err => { console.warn('⚠️ โหลด Server ไม่ได้ ใช้ Cache:', err.message); isConnected = false; });
 }
@@ -1431,12 +1512,14 @@ function refreshData(){
       const _plJsonR = perfLabel('refreshData:jsonParse'); perfStart(_plJsonR);
       return res.json().then(data => { perfEnd(_plJsonR); return data; });
     })
-    .then(data => {
+    .then(async data => {
       if(!data || data.status === 'error') throw new Error(data?.message || 'Server error');
       if(data.subs     && Array.isArray(data.subs))     subs         = data.subs;
-      if(data.records  && Array.isArray(data.records))  records      = computeUsed(data.records);
       if(data.calendar && Array.isArray(data.calendar)) workCalendar = data.calendar;
-      persist(); isConnected = true; invalidateSummaryCache('refreshData'); renderAll();
+      persist(); isConnected = true; invalidateSummaryCache('refreshData');
+      await loadMeterStatus();
+      if(appMode === 'admin' && sessionToken) await loadAdminRecords();
+      renderAll();
       setSyncStatus('ok',`โหลดสำเร็จ — ${subs.length} ตู้`);
     })
     .catch(err => {
@@ -1457,7 +1540,8 @@ async function testConn(){
     const data = await res.json();
     if(data.status === 'error') throw new Error(data.message);
     setSyncStatus('ok','เชื่อมต่อสำเร็จ');
-    box.innerHTML = `<div class="info-box">✅ เชื่อมต่อสำเร็จ — ${records.length} records, ${subs.length} subs</div>`;
+    const recNote = appMode === 'admin' ? `${records.length} records, ` : '';
+    box.innerHTML = `<div class="info-box">✅ เชื่อมต่อสำเร็จ — ${recNote}${subs.length} subs</div>`;
   }catch(e){
     setSyncStatus('error','ล้มเหลว');
     box.innerHTML = `<div class="warn-box">❌ ${e.message}</div>`;
@@ -1504,7 +1588,7 @@ async function init(){
     await loadFromServer();
     const found = subs.find(s => s.id === p.toUpperCase());
     if(found){
-      selectSub(found.id);
+      await selectSub(found.id);
       toast('📍 เปิด ' + found.id + ' จาก QR','ok');
     } else {
       toast('ไม่พบ Sub: ' + p.toUpperCase() + ' (ลองรีเฟรช)','err');
@@ -2269,13 +2353,13 @@ async function addCalendarDay(){
   persist(); renderCalendarList();
   document.getElementById('cal-date').value = ''; document.getElementById('cal-note').value = '';
   toast('✅ เพิ่มวันพิเศษแล้ว','ok');
-  try{ await apiPost({ action:'setCalendarDay', date, type, note }); invalidateSummaryCache('setCalendarDay:'+date); }catch(e){ toast('⚠️ Sync ปฏิทินล้มเหลว','warn'); }
+  try{ await apiPostAuthed({ action:'setCalendarDay', date, type, note }); invalidateSummaryCache('setCalendarDay:'+date); }catch(e){ toast('⚠️ Sync ปฏิทินล้มเหลว: ' + e.message,'warn'); }
 }
 async function removeCalendarDay(date){
   if(!confirm(`ลบวันพิเศษ ${fmtDate(date)}?`)) return;
   workCalendar = workCalendar.filter(c => c.date !== date);
   persist(); renderCalendarList(); toast('ลบแล้ว');
-  try{ await apiPost({ action:'deleteCalendarDay', date }); invalidateSummaryCache('deleteCalendarDay:'+date); }catch(e){}
+  try{ await apiPostAuthed({ action:'deleteCalendarDay', date }); invalidateSummaryCache('deleteCalendarDay:'+date); }catch(e){ /* toast already shown by apiPostAuthed */ }
 }
 function renderCalendarList(){
   const box = document.getElementById('cal-list');
@@ -2374,7 +2458,10 @@ function renderZoneAreas(){
     const grid = document.createElement('div');
     grid.className = 'sub-grid';
     list.forEach(s => {
-      const hasData = records.some(r => r.subId === s.id);
+      // Aug 2026 patch: "has data" dot now comes from the boolean-only
+      // meterStatus map (getMeterStatus), not the bulk records array —
+      // basic mode never has the full records array anymore.
+      const hasData = !!meterStatus[s.id];
       const isSel   = activeSub && activeSub.id === s.id;
       const d = document.createElement('div');
       d.className = 'sub-card' + (isSel?' sel':'') + (hasData?' has-data':'');
@@ -2386,7 +2473,7 @@ function renderZoneAreas(){
     container.appendChild(block);
   });
 }
-function selectSub(subId){
+async function selectSub(subId){
   activeSub = subs.find(s => s.id === subId);
   if(!activeSub) return;
   document.getElementById('sub-list-screen').style.display = 'none';
@@ -2404,24 +2491,35 @@ function selectSub(subId){
   document.getElementById('preview-box').style.display = 'none';
   setNow();
   const sb = document.getElementById('save-btn');
+  sb.disabled  = true;
+  sb.innerHTML = '⏳ กำลังโหลดประวัติมิเตอร์...';
+  activeSubRecent = [];
+  updateMeterSummary(); renderRecent(); renderZoneAreas();
+  // Scoped fetch — only this one meter's own recent history, not the whole dataset.
+  try{
+    activeSubRecent = await loadRecentForSub(activeSub.id, 5);
+  }catch(e){
+    toast('⚠️ โหลดประวัติมิเตอร์ไม่ได้: ' + e.message,'warn');
+  }
   sb.innerHTML = isConnected ? '✅ บันทึกข้อมูล' : '⚠️ บันทึก (Offline)';
   sb.disabled  = false;
-  updateMeterSummary(); renderRecent(); renderZoneAreas();
+  updateMeterSummary(); renderRecent();
 }
 function backToList(){
   activeSub = null;
+  activeSubRecent = [];
   document.getElementById('sub-list-screen').style.display = 'block';
   document.getElementById('entry-section').style.display   = 'none';
   renderZoneAreas();
 }
 function updateMeterSummary(){
   if(!activeSub) return;
-  const recs = getSubRecs(activeSub.id);
-  const sm   = document.getElementById('meter-summary');
-  if(!recs.length){ sm.style.display = 'none'; return; }
+  const sm = document.getElementById('meter-summary');
+  if(!activeSubRecent.length){ sm.style.display = 'none'; return; }
   sm.style.display = 'block';
-  const last = recs[recs.length - 1];
-  const prev = recs.length > 1 ? recs[recs.length - 2] : null;
+  // activeSubRecent is newest-first (see getRecentRecordsForSub in Code.gs)
+  const last = activeSubRecent[0];
+  const prev = activeSubRecent.length > 1 ? activeSubRecent[1] : null;
   document.getElementById('last-reading').textContent = fmtNum(last.kwh, activeSub.id);
   document.getElementById('prev-reading').textContent = prev ? fmtNum(prev.kwh, activeSub.id) : '—';
   document.getElementById('last-used').textContent    = prev ? fmtNum(prev.used||0, activeSub.id) : '—';
@@ -2432,7 +2530,7 @@ function previewUsed(){
   const box  = document.getElementById('preview-box');
   const chip = document.getElementById('preview-chip');
   if(isNaN(val) || val < 0){ box.style.display = 'none'; return; }
-  const lastKwh    = getLastKwh(activeSub.id);
+  const lastKwh    = activeSubRecent.length ? (parseFloat(activeSubRecent[0].kwh) || 0) : null;
   const multiplier = activeSub.multiplier !== undefined ? parseFloat(activeSub.multiplier) : 1;
   box.style.display = 'block';
   if(lastKwh === null){ chip.className = 'chip chip-green'; chip.textContent = '📌 บันทึกครั้งแรกของ Sub นี้'; }
@@ -2444,17 +2542,21 @@ function previewUsed(){
 }
 function renderRecent(){
   if(!activeSub) return;
-  const recs = getSubRecs(activeSub.id).slice(-5).reverse();
+  const recs = activeSubRecent; // already newest-first, already scoped to this sub
   const card = document.getElementById('recent-card');
   const body = document.getElementById('recent-body');
   if(!recs.length){ card.style.display = 'none'; return; }
   card.style.display = 'block';
+  // Edit is admin-only server-side anyway (editRecord requires a token) — only
+  // show the pencil in admin mode so basic-mode users don't hit a confusing
+  // "record not found" (records array is intentionally empty for them now).
+  const canEdit = appMode === 'admin';
   body.innerHTML = recs.map(r => `<tr>
     <td>${fmtDate(r.date)}</td><td>${fmtTime(r.time)}</td>
     <td class="td-kwh">${fmtNum(r.kwh, activeSub.id)}</td>
     <td class="td-used">${fmtNum(r.used||0, activeSub.id)}</td>
     <td>${esc(r.user)||'—'}</td>
-    <td><button class="btn btn-ghost btn-sm" onclick="openEdit('${r.id}')">✏️</button></td>
+    <td>${canEdit ? `<button class="btn btn-ghost btn-sm" onclick="openEdit('${r.id}')">✏️</button>` : ''}</td>
   </tr>`).join('');
 }
 
@@ -2469,9 +2571,15 @@ async function saveRecord(){
   if(!date) return toast('เลือกวันที่ด้วย','err');
   const time = document.getElementById('in-time').value;
   const note = document.getElementById('in-note').value || '';
-  const dupe = records.find(r => r.subId === activeSub.id && r.date === date);
+  // Duplicate/last-value checks now run against activeSubRecent (the last 5
+  // readings for this one meter) instead of the full local records array —
+  // basic mode no longer has the full history to check against. This means
+  // a duplicate on a date older than the last 5 readings for this meter
+  // won't be caught client-side anymore; the backend's own data is still
+  // authoritative and unaffected, this only weakens the client-side warning.
+  const dupe = activeSubRecent.find(r => r.date === date);
   if(dupe){ if(!confirm(`⚠️ ตู้ ${activeSub.id} วันที่ ${fmtDate(date)} มีการบันทึกแล้ว (${fmtNum(dupe.kwh, activeSub.id)} kWh)\nบันทึกเพิ่มอีกหรือไม่?`)) return; }
-  const lastKwh = getLastKwh(activeSub.id);
+  const lastKwh = activeSubRecent.length ? (parseFloat(activeSubRecent[0].kwh) || 0) : null;
   if(lastKwh !== null && kwh < lastKwh){ if(!confirm(`ค่าที่กรอก (${kwh}) น้อยกว่าครั้งก่อน (${lastKwh})\nบันทึกต่อหรือไม่?`)) return; }
   if(lastKwh !== null && kwh > lastKwh){
     const multiplier = activeSub.multiplier !== undefined ? parseFloat(activeSub.multiplier) : 1;
@@ -2486,34 +2594,47 @@ async function saveRecord(){
 async function doSaveRecord(sub, kwh, date, time, user, note){
   const now = new Date();
   const rec = { id: `REC-${now.getTime()}-${Math.floor(Math.random()*1000)}`, subId: sub.id, subName: sub.name, zone: sub.zone, date, time, kwh, user, note, ts: now.toISOString(), editedTs: '', editedBy: '' };
-  records.push(rec); records = computeUsed(records); persist();
+  // Only mutate the bulk `records` array if it's actually loaded (admin mode) —
+  // in basic mode it's intentionally empty, so skip this rather than build a
+  // misleading single-item array out of it.
+  if(appMode === 'admin' && records.length){ records.push(rec); records = computeUsed(records); persist(); }
+  meterStatus[sub.id] = true; // optimistic — we know this meter has data now
   toast('✅ บันทึกแล้ว','ok');
   document.getElementById('in-kwh').value  = '';
   document.getElementById('in-note').value = '';
   document.getElementById('preview-box').style.display = 'none';
   setNow();
-  updateMeterSummary(); renderRecent(); renderZoneAreas(); updateBadge();
+  renderZoneAreas(); updateBadge();
   const btn = document.getElementById('save-btn');
   btn.disabled = true; btn.textContent = '⏳ กำลัง sync...';
   setSyncStatus('busy','กำลังบันทึกลง Google Sheets...');
   try{
-    const payload = { id:rec.id, subId:rec.subId, subName:rec.subName, zone:rec.zone, date:rec.date, time:rec.time, kwh:rec.kwh, user:rec.user, note:rec.note, ts:rec.ts, editedTs:'', editedBy:'' };
+    const payload = { id:rec.id, subId:rec.subId, subName:rec.subName, zone:rec.zone, date:rec.date, time:rec.time, kwh:rec.kwh, user:rec.user, note:rec.note, ts:rec.ts, editedTs:'', editedBy:'', deviceKey:DEVICE_KEY };
     await apiPost({ action:'saveRecord', record:payload });
     invalidateSummaryCache('saveRecord:'+rec.subId+'@'+rec.date);
     setSyncStatus('ok','บันทึกลง Sheets แล้ว');
+    // Refresh the scoped view for this meter so prev/last/delta and the
+    // recent-5 table reflect the save that just happened.
+    if(activeSub && activeSub.id === sub.id){
+      try{ activeSubRecent = await loadRecentForSub(sub.id, 5); }catch(e){ /* non-fatal — stale view until next open */ }
+      updateMeterSummary(); renderRecent();
+    }
   }catch(e){
     setSyncStatus('error','บันทึกในเครื่องแล้ว — Sync ล้มเหลว');
     toast('⚠️ บันทึกในเครื่องแล้ว แต่ Sync ยังไม่สำเร็จ','warn');
   }finally{ btn.disabled = false; btn.innerHTML = '✅ บันทึกข้อมูล'; }
 }
 function getRecentAvgUsed(subId){
-  const chain = getSubRecs(subId).filter(r => (r.used||0) > 0).slice(-5);
+  // activeSubRecent is already scoped to `subId` (the currently open meter)
+  // and already limited to the last 5 — same window the original slice(-5)
+  // used, so behavior is unchanged for this specific calculation.
+  const chain = activeSubRecent.filter(r => (r.used||0) > 0);
   if(!chain.length) return 0;
   return chain.reduce((a,r) => a + (r.used||0), 0) / chain.length;
 }
 async function markUnableToRecord(){
   if(!activeSub) return toast('เลือก Substation ก่อน','err');
-  const lastRec = getSubRecs(activeSub.id).slice(-1)[0];
+  const lastRec = activeSubRecent[0];
   if(!lastRec){ return toast('⚠️ ยังไม่มีค่ามิเตอร์ก่อนหน้า ไม่สามารถใช้ฟังก์ชันนี้ได้','err'); }
   const reason = prompt('📝 ระบุเหตุผลที่จดไม่ได้:\n(เช่น มิเตอร์เสีย, เข้าพื้นที่ไม่ได้)', 'ไม่สามารถบันทึกค่าได้');
   if(reason === null) return;
@@ -2564,28 +2685,45 @@ async function saveEdit(){
   if(isNaN(kwh) || kwh < 0) return toast('กรอกค่ามิเตอร์ให้ถูกต้อง','err');
   if(!date) return toast('เลือกวันที่ด้วย','err');
   const sub = subs.find(s => s.id === newSubId);
+  const originalRecord = { ...records[idx] };
   records[idx] = { ...records[idx], subId: newSubId, subName: sub?.name || records[idx].subName, zone: sub?.zone || records[idx].zone, kwh, date, time, user, note, editedTs: new Date().toISOString(), editedBy: currentUser || 'ผู้บันทึก' };
   records = computeUsed(records); persist();
   const saved = records[idx];
-  closeEdit(); renderAll(); toast('✅ แก้ไขแล้ว','ok');
+  closeEdit(); renderAll(); toast('✅ แก้ไขแล้ว (กำลัง sync...)','ok');
   setSyncStatus('busy','กำลังซิงค์...');
   try{
     const payload = { id:saved.id, subId:saved.subId, subName:saved.subName, zone:saved.zone, date:saved.date, time:saved.time, kwh:saved.kwh, user:saved.user, note:saved.note, ts:saved.ts, editedTs:saved.editedTs, editedBy:saved.editedBy };
-    await apiPost({ action:'editRecord', record:payload });
+    await apiPostAuthed({ action:'editRecord', record:payload });
     invalidateSummaryCache('editRecord:'+saved.subId+'@'+saved.date);
     setSyncStatus('ok','แก้ไขสำเร็จ');
-  }catch(e){ setSyncStatus('error','แก้ในเครื่องแล้ว — Sync ล้มเหลว'); }
+  }catch(e){
+    // Server rejected the edit (e.g. session expired) — roll back local state so the
+    // UI doesn't show an edit that never actually made it to Sheets.
+    records[idx] = originalRecord;
+    records = computeUsed(records); persist(); renderAll();
+    setSyncStatus('error','แก้ไขไม่สำเร็จ — ยกเลิกการเปลี่ยนแปลงในเครื่องแล้ว');
+  }
 }
 async function deleteRecord(id){
   if(!confirm('ลบรายการนี้?')) return;
   const target = records.find(r => r.id === id);
   if(!target) return;
+  const targetIdx = records.indexOf(target);
   records = records.filter(r => r.id !== id);
   records = computeUsed(records); persist();
-  toast('ลบแล้ว'); renderAll();
+  toast('ลบแล้ว (กำลัง sync...)'); renderAll();
   setSyncStatus('busy','กำลังลบจาก Sheets...');
-  try{ await apiPost({ action:'deleteRecord', id:String(id) }); invalidateSummaryCache('deleteRecord:'+id); setSyncStatus('ok','ลบสำเร็จ'); }
-  catch(e){ setSyncStatus('error','Offline — จะ sync เมื่อเชื่อมต่อได้'); }
+  try{
+    await apiPostAuthed({ action:'deleteRecord', id:String(id) });
+    invalidateSummaryCache('deleteRecord:'+id);
+    setSyncStatus('ok','ลบสำเร็จ');
+  }catch(e){
+    // Server rejected the delete — restore the record locally instead of silently
+    // leaving it gone from the UI while it still exists in the Sheet.
+    records.splice(targetIdx, 0, target);
+    records = computeUsed(records); persist(); renderAll();
+    setSyncStatus('error','ลบไม่สำเร็จ — กู้คืนรายการในเครื่องแล้ว');
+  }
 }
 
 /* ════════════ EDIT SUBSTATION ════════════ */
@@ -2614,12 +2752,11 @@ async function saveEditSub(){
   subs[editSubIndex] = updatedSub; persist(); closeEditSub();
   records = computeUsed(records); persist();
   renderSubList(); renderZoneAreas(); populateDDs(); renderAll();
-  toast(`✅ อัปเดตตู้ ${updatedSub.id} เรียบร้อย`,'ok');
+  toast(`✅ อัปเดตตู้ ${updatedSub.id} เรียบร้อย (กำลังซิงค์...)`,'ok');
   setSyncStatus('busy','กำลังซิงค์ลง Google Sheets...');
   try{
-    const res = await apiPost({ action:'updateSubConfig', sub:updatedSub });
-    if(res && res.success) setSyncStatus('ok','บันทึกข้อมูลตู้ลงแผ่นชีทสำเร็จ');
-    else throw new Error(res?.error || 'Sheets rejected');
+    await apiPostAuthed({ action:'updateSubConfig', sub:updatedSub });
+    setSyncStatus('ok','บันทึกข้อมูลตู้ลงแผ่นชีทสำเร็จ');
   }catch(e){ setSyncStatus('error','บันทึกลงชีทไม่สำเร็จ (แต่เซฟเก็บในแคชแล้ว)'); }
 }
 
@@ -2752,10 +2889,9 @@ async function addSub(){
   const newSub = { id, name, zone, decimal, multiplier:1, unit:'kWh' };
   // บันทึก backend ก่อน — ถ้าล้มเหลว ไม่เพิ่มใน local (กัน state หลุด)
   try{
-    const res = await apiPost({ action:'updateSubConfig', sub:newSub });
-    if(!res || !res.success) return toast('บันทึกไม่สำเร็จ: ' + (res && res.error || 'server error'),'err');
+    await apiPostAuthed({ action:'updateSubConfig', sub:newSub });
   }catch(e){
-    return toast('บันทึกไม่สำเร็จ: ' + e.message,'err');
+    return; // apiPostAuthed already showed the error toast
   }
   subs.push(newSub);
   persist();
@@ -2767,14 +2903,16 @@ async function addSub(){
 async function removeSub(i){
   const s   = subs[i];
   const cnt = records.filter(r => r.subId === s.id).length;
-  const msg = cnt > 0 ? `ลบ ${s.id} — ${s.name}?\n(มีข้อมูล ${cnt} records ที่เชื่อมกับตู้นี้ — records จะยังอยู่)` : `ลบ ${s.id} — ${s.name}?`;
-  if(!confirm(msg)) return;
+  if(cnt > 0){
+    toast(`❌ ลบไม่ได้ — ${s.id} มีประวัติการบันทึก ${cnt} รายการอยู่แล้ว (ระบบป้องกันไว้เพื่อไม่ให้ report เก่าคำนวณผิด — เปลี่ยนชื่อ/Zone แทนถ้าต้องการเลิกใช้งานตู้นี้)`,'err');
+    return;
+  }
+  if(!confirm(`ลบ ${s.id} — ${s.name}?`)) return;
   // ลบ backend ก่อน — ถ้าล้มเหลว ไม่ลบ local (กัน state หลุด)
   try{
-    const res = await apiPost({ action:'deleteSub', id:s.id });
-    if(!res || !res.success) return toast('ลบไม่สำเร็จ: ' + (res && res.error || 'server error'),'err');
+    await apiPostAuthed({ action:'deleteSub', id:s.id });
   }catch(e){
-    return toast('ลบไม่สำเร็จ: ' + e.message,'err');
+    return; // apiPostAuthed already showed the error toast
   }
   subs.splice(i, 1); persist();
   renderSubList(); renderZoneAreas(); populateDDs();
