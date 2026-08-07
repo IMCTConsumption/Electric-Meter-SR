@@ -1030,14 +1030,14 @@ function getCategoryOf(sub){
 }
 
 /* ───────── CONFIG ───────── */
-const API_URL     = 'https://script.google.com/macros/s/AKfycbwnMG0pAZGZo4yZfQtioQ-Uj1hP8ZbrWz5PfNlLuWc6XRl4kU69pyJUpO-pfhsiB1du7w/exec';
+const API_URL     = 'https://script.google.com/macros/s/AKfycbyH9UH3Cva7VMm9Tx-p3hdonQqkPHv41SNzEt3HB8iSXs1CBgkzhi-L6iEVu6Z-9C53RA/exec';
 const QR_BASE_URL = 'https://github.com/IMCTConsumption/Electric-Meter-SR/';
 const ABNORMAL_MULTIPLIER = 5;
 // Abuse-prevention only (matches DEVICE_KEY constant in Code.gs) — NOT real auth,
 // since anyone reading this source can read this value too. It just raises the
 // cost of casual bot/script hammering of the saveRecord endpoint. If you change
 // the value in Code.gs, this must be updated to match or all saves will fail.
-const DEVICE_KEY = 'SR-ELEC-2026-CHANGE-ME';
+const DEVICE_KEY = 'SR-ELEC-2026-FACILITY';
 
 /* ───────── STATE ───────── */
 let subs                   = Array.isArray(jLoad('subs'))     ? jLoad('subs')     : [];
