@@ -565,7 +565,7 @@ i svg{ width:1em; height:1em; display:inline-block; vertical-align:-0.12em; }
     </div>
 
     <div class="card">
-      <div class="card-title">เทียบการใช้ไฟฟ้า 11 กลุ่มหลัก</div>
+      <div class="card-title">เทียบการใช้ไฟฟ้ากลุ่มหลัก</div>
       <div class="chart-ctrl">
         <span class="chart-ctrl-label">มุมมอง:</span>
         <button class="ctrl-btn green" id="g9-p-day" onclick="setG9Period('day')">รายวัน</button>
@@ -2113,6 +2113,8 @@ let reportRaw           = [];
 let reportComputed      = null;
 let zoneReportRaw       = [];
 let zoneReportComputed  = null;
+let reportReqId         = 0;
+let zoneReportReqId     = 0;
 
 function reportGroupsMain(){ return reportGroups.filter(g => g.type === 'main'); }
 function reportGroupsUtil(){ return reportGroups.filter(g => g.type === 'util'); }
@@ -2279,7 +2281,7 @@ function populateZoneReportSelect(){
   const prev = sel.value;
   // นับจำนวน sub ต่อ zone จาก subs จริง (ไม่ใช้ zone ที่ไม่มี sub อยู่เลย กันตัวเลือกว่างเปล่า)
   const counts = {};
-  subs.forEach(s => { const cat = getCategoryOf(s); counts[cat] = (counts[cat]||0) + 1; });
+  subs.forEach(s => { const cat = zoneName(s.zone); counts[cat] = (counts[cat]||0) + 1; });
   const cats = reportGroups.filter(g => counts[g.name] > 0).map(g => ({ name:g.name, icon:g.icon||'📦' }));
   sel.innerHTML = cats.map(c => `<option value="${c.name}">${c.icon} ${c.name} (${counts[c.name]})</option>`).join('');
   if(prev && counts[prev]) sel.value = prev;
@@ -2288,13 +2290,13 @@ function populateZoneReportSelect(){
 /* ── renderZoneReport ── */
 function renderZoneReport(){
   const area = document.getElementById('zone-report-area');
-  const zoneName = document.getElementById('zone-rep-select')?.value;
-  if(!zoneName){ area.innerHTML = '<div class="section-empty">เลือก Zone</div>'; zoneReportComputed = null; return; }
+  const selectedZone = document.getElementById('zone-rep-select')?.value;
+  if(!selectedZone){ area.innerHTML = '<div class="section-empty">เลือก Zone</div>'; zoneReportComputed = null; return; }
   if(!zoneReportRaw.length){ area.innerHTML = '<div class="section-empty">📭 เลือกเดือนก่อน (ยังไม่มีข้อมูลโหลดไว้)</div>'; zoneReportComputed = null; return; }
   const month = document.getElementById('zone-rep-month')?.value;
   if(!month){ area.innerHTML = '<div class="section-empty">เลือกเดือนก่อน</div>'; zoneReportComputed = null; return; }
 
-  const zoneSubs = subs.filter(s => getCategoryOf(s) === zoneName);
+  const zoneSubs = subs.filter(s => zoneName(s.zone) === selectedZone);
   if(!zoneSubs.length){ area.innerHTML = '<div class="section-empty">ไม่มีมิเตอร์ใน Zone นี้</div>'; zoneReportComputed = null; return; }
 
   const [y,m] = month.split('-');
@@ -2336,10 +2338,10 @@ function renderZoneReport(){
   const grandTotal = totalsPerMeter.reduce((a,b) => a+b, 0);
   const totCells = totalsPerMeter.map(t => `<td style="text-align:right;padding:7px 8px;font-weight:700">${Math.round(t).toLocaleString()}</td>`).join('');
 
-  zoneReportComputed = { zoneName, month, days, zoneSubs, valGrid, totalsPerMeter, grandTotal };
+  zoneReportComputed = { zoneName: selectedZone, month, days, zoneSubs, valGrid, totalsPerMeter, grandTotal };
 
   area.innerHTML = `
-    <div style="font-size:13px;font-weight:700;margin-bottom:8px;text-align:center">${zoneName} — รายมิเตอร์ · ${month}</div>
+    <div style="font-size:13px;font-weight:700;margin-bottom:8px;text-align:center">${selectedZone} — รายมิเตอร์ · ${month}</div>
     <div style="overflow-x:auto">
       <table style="width:100%;border-collapse:collapse;font-size:11px;white-space:nowrap">
         <thead><tr style="background:var(--surface-3)">
@@ -2784,7 +2786,10 @@ async function renderG9Chart(){
     var countPeriods;
     if(g9State.period==='day') countPeriods = [pick];
     else countPeriods = allPeriods.filter(function(p){return p.startsWith(pick);});
-    var groupVals = reportGroups.map(function(col){
+    // "กลุ่มหลัก" chart — main groups only. In apps without a `type` column
+    // (or where every row is 'main'), this behaves the same as showing all groups.
+    var _mainOnly = reportGroups.filter(function(g){ return !g.type || g.type === 'main'; });
+    var groupVals = _mainOnly.map(function(col){
       var total = 0;
       countPeriods.forEach(function(p){
         (col.meters||[]).forEach(function(id){ var u=meterUsedOnDay(meterMap,id,p,allPeriods); if(u!==null) total+=u; });
