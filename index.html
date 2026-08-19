@@ -173,19 +173,6 @@
   pointer-events: none;
 }
 .rd-search-icon svg { width: 16px; height: 16px; display: block; }
-.rd-search-kbd {
-  position: absolute;
-  right: 10px; top: 50%;
-  transform: translateY(-50%);
-  font-family: var(--rd-font-mono);
-  font-size: 10px;
-  color: var(--rd-ink-3);
-  background: var(--rd-line-2);
-  padding: 2px 6px;
-  border-radius: 4px;
-  letter-spacing: .04em;
-  pointer-events: none;
-}
 
 .rd-hdr-right {
   display: flex; align-items: center; gap: 8px;
@@ -563,6 +550,14 @@
 
 /* Focus-visible baseline */
 :focus-visible { outline: 2px solid var(--rd-accent); outline-offset: 2px; border-radius: 4px; }
+/* Search moved out of the global header into the Entry panel */
+.rd-search-inline {
+  max-width: none;
+  width: 100%;
+  margin: 0 0 14px;
+}
+.rd-search-inline .rd-search-input { height: 40px; }
+
 /* ═══════════════════════════════════════════════════════════
    REDESIGN LAYER — SESSION 2
    Meter card ("information card") + zone header restyle.
@@ -1016,13 +1011,6 @@ i svg{ width:1em; height:1em; display:inline-block; vertical-align:-0.12em; }
     </div>
   </div>
 
-  <div class="rd-search">
-    <span class="rd-search-icon">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
-    </span>
-    <input type="search" id="rd-search-input" class="rd-search-input" placeholder="Search meters — ID, name, or zone" autocomplete="off">
-    <span class="rd-search-kbd">Enter</span>
-  </div>
 
   <div class="rd-hdr-right">
     <button class="rd-icon-btn" id="theme-btn" onclick="toggleTheme()" title="Toggle theme" aria-label="Toggle theme">
@@ -1126,6 +1114,15 @@ i svg{ width:1em; height:1em; display:inline-block; vertical-align:-0.12em; }
       <div class="card">
         <div class="card-title">📍 เลือก Meter</div>
         <div class="rec-badge" id="hdr-badge">0 rec</div>
+        <!-- Search lives here, not in the global header: it only ever filters
+             the meter cards below it, so putting it beside the thing it acts
+             on avoids showing a dead control on the Data/Charts/Summary tabs. -->
+        <div class="rd-search rd-search-inline">
+          <span class="rd-search-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+          </span>
+          <input type="search" id="rd-search-input" class="rd-search-input" placeholder="ค้นหามิเตอร์ — รหัส, ชื่อ, หรือโซน" autocomplete="off">
+        </div>
         <div id="zone-areas"></div>
         <div class="btn-row" style="margin-top:12px">
           <button class="btn btn-yellow btn-sm" id="refresh-btn" onclick="refreshData()">🔄 Refresh</button>
@@ -1211,7 +1208,6 @@ i svg{ width:1em; height:1em; display:inline-block; vertical-align:-0.12em; }
   </div>
 
   <div class="panel" id="panel-data">
-    <div class="stats-row" id="stats-row"></div>
     <div class="card">
       <div class="card-title">🔍 กรองข้อมูล <span id="filter-badge" class="filter-badge" style="display:none">● Active</span></div>
       <div class="f-2col">
@@ -1972,6 +1968,19 @@ let meterStatus = {};
 let meterStatusToday = {};  // {meterId: true/false} — has a reading dated TODAY (Asia/Bangkok)
 let activeSubRecent = [];
 
+/* Months that actually contain data, fetched from the server.
+   Independent of the in-memory `records` window, so the pickers can offer
+   every month that exists without the client holding the whole dataset. */
+let availableMonths = null;   // array of 'YYYY-MM', newest first
+
+async function loadAvailableMonths(){
+  try{
+    const res = await apiPost({ action:'getAvailableMonths' });
+    if(res && res.success && Array.isArray(res.months)) availableMonths = res.months;
+  }catch(e){ console.warn('⚠️ โหลดรายการเดือนไม่ได้:', e.message); }
+  return availableMonths;
+}
+
 async function loadMeterStatus(){
   // ONE request returns both maps (see getMeterStatus in Code.gs). Kept as a
   // single round-trip on purpose: the /exec endpoint is the slowest hop and
@@ -1983,6 +1992,9 @@ async function loadMeterStatus(){
       if(res.today)  meterStatusToday = res.today;
     }
   }catch(e){ console.warn('⚠️ โหลดสถานะมิเตอร์ไม่ได้:', e.message); }
+  // Month list is only needed by the admin report pickers — fetch it lazily
+  // and never block the entry screen on it.
+  if(appMode === 'admin' && !availableMonths) loadAvailableMonths();
 }
 /* ── Admin record window ──
    The full history is thousands of rows and is the single slowest thing in
@@ -2118,14 +2130,41 @@ function setSyncStatus(status, msg){
     setTimeout(() => { ban.className = 'sync-banner'; }, 2500);
   }
 }
+/* Fetch the doGet payload with retries.
+   The Apps Script /exec endpoint answers a GET by 302-ing to a one-shot
+   script.googleusercontent.com/macros/echo URL, and that redirect target
+   intermittently returns 404 — a Google-side failure, not a bad request.
+   apiPost() already retried; this path did not, even though it's the FIRST
+   request the app makes on load. A single blip therefore dropped the app
+   straight to cached data (blank on a fresh browser). Same backoff as apiPost. */
+async function _fetchDoGet(retries = 2){
+  let lastErr;
+  for(let attempt = 0; attempt <= retries; attempt++){
+    const ctrl = new AbortController();
+    const tid  = setTimeout(() => ctrl.abort(), 20000);
+    try{
+      const res = await fetch(API_URL, { signal: ctrl.signal });
+      clearTimeout(tid);
+      if(!res.ok) throw new Error('HTTP ' + res.status);
+      return await res.json();
+    }catch(e){
+      clearTimeout(tid);
+      lastErr = e;
+      if(attempt < retries){
+        console.warn('⚠️ loadFromServer attempt ' + (attempt+1) + ' failed (' + e.message + ') — retrying...');
+        await new Promise(r => setTimeout(r, 800 * (attempt + 1)));
+      }
+    }
+  }
+  throw lastErr;
+}
+
 function loadFromServer(){
   const _plApi = perfLabel('loadFromServer:api'); perfStart(_plApi);
-  return fetch(API_URL)
-    .then(res => {
+  return _fetchDoGet()
+    .then(data => {
       perfEnd(_plApi);
-      if(!res.ok) throw new Error('Network error');
-      const _plJson = perfLabel('loadFromServer:jsonParse'); perfStart(_plJson);
-      return res.json().then(data => { perfEnd(_plJson); return data; });
+      return data;
     })
     .then(async data => {
       if(!data || data.status === 'error') throw new Error(data?.message || 'Server error');
@@ -2150,12 +2189,10 @@ function refreshData(){
   if(btn){ btn.disabled = true; btn.innerHTML = '⏳ กำลังโหลด...'; }
   setSyncStatus('busy','กำลังโหลดข้อมูล...');
   const _plApiR = perfLabel('refreshData:api'); perfStart(_plApiR);
-  fetch(API_URL)
-    .then(res => {
+  _fetchDoGet()                       // same retry/timeout wrapper as loadFromServer
+    .then(data => {
       perfEnd(_plApiR);
-      if(!res.ok) throw new Error('Network error');
-      const _plJsonR = perfLabel('refreshData:jsonParse'); perfStart(_plJsonR);
-      return res.json().then(data => { perfEnd(_plJsonR); return data; });
+      return data;
     })
     .then(async data => {
       if(!data || data.status === 'error') throw new Error(data?.message || 'Server error');
@@ -2538,36 +2575,55 @@ async function saveRecord(){
 async function doSaveRecord(sub, kwh, date, time, user, note){
   const now = new Date();
   const rec = { id: `REC-${now.getTime()}-${Math.floor(Math.random()*1000)}`, meterId: sub.id, meterName: sub.name, zone: sub.zone, date, time, kwh, user, note, ts: now.toISOString(), editedTs: '', editedBy: '' };
+  // Remember the pre-save state so a failed write can be rolled back cleanly.
+  // NOTE: nothing is queued locally for a recorder — if the POST fails the
+  // reading is genuinely gone, so we must NOT clear the form or claim success
+  // until the server has confirmed. (The old code did both up-front and told
+  // the user "saved on device", which was untrue for recorders and could let
+  // a lost reading pass unnoticed.)
+  const prevStatus      = meterStatus[sub.id];
+  const prevStatusToday = meterStatusToday[sub.id];
   if(appMode === 'admin' && records.length){ records.push(rec); records = computeUsed(records); persist(); }
   meterStatus[sub.id] = true;
-  toast('✅ บันทึกแล้ว','ok');
-  document.getElementById('in-kwh').value  = '';
-  document.getElementById('in-note').value = '';
-  document.getElementById('preview-box').style.display = 'none';
-  setNow();
+  meterStatusToday[sub.id] = true;   // this is what drives the green/red card
   renderZoneAreas(); updateBadge();
   const btn = document.getElementById('save-btn');
-  btn.disabled = true; btn.textContent = '⏳ กำลัง sync...';
+  btn.disabled = true; btn.textContent = '⏳ กำลังบันทึก...';
   setSyncStatus('busy','กำลังบันทึกลง Google Sheets...');
   try{
     const payload = { id:rec.id, meterId:rec.meterId, meterName:rec.meterName, zone:rec.zone, date:rec.date, time:rec.time, kwh:rec.kwh, user:rec.user, note:rec.note, ts:rec.ts, editedTs:'', editedBy:'' };
     const res = await apiPost({ action:'saveRecord', record:payload, token: sessionToken });
     if(!res || res.success === false) throw new Error((res && res.error) || 'บันทึกไม่สำเร็จ');
     invalidateSummaryCache('saveRecord:'+rec.meterId+'@'+rec.date);
+    // Confirmed by the server — only now is it safe to clear the form.
+    toast('✅ บันทึกแล้ว','ok');
+    document.getElementById('in-kwh').value  = '';
+    document.getElementById('in-note').value = '';
+    document.getElementById('preview-box').style.display = 'none';
+    setNow();
     setSyncStatus('ok','บันทึกลง Sheets แล้ว');
     if(activeSub && activeSub.id === sub.id){
       try{ activeSubRecent = await loadRecentForSub(sub.id, 5); }catch(e){}
       updateMeterSummary(); renderRecent();
     }
   }catch(e){
+    // Roll back the optimistic state: the card goes back to red and the value
+    // the person typed stays in the box so they can just press save again.
+    meterStatus[sub.id]      = prevStatus;
+    meterStatusToday[sub.id] = prevStatusToday;
+    if(appMode === 'admin' && records.length){
+      records = records.filter(r => r.id !== rec.id);
+      records = computeUsed(records); persist();
+    }
+    renderZoneAreas(); updateBadge();
     const isAuthFailure = /เซสชัน|เข้าสู่ระบบ/.test(e.message || '');
     if(isAuthFailure){
-      setSyncStatus('error','เซสชันหมดอายุ — บันทึกในเครื่องแล้ว แต่ยังไม่ได้ sync');
-      toast('⚠️ เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่แล้วลองบันทึกอีกครั้ง','warn');
+      setSyncStatus('error','เซสชันหมดอายุ — ยังไม่ได้บันทึก');
+      toast('❌ เซสชันหมดอายุ ยังไม่ได้บันทึก — เข้าสู่ระบบใหม่แล้วกดบันทึกอีกครั้ง','err');
       showSessionExpiredBanner();
     } else {
-      setSyncStatus('error','บันทึกในเครื่องแล้ว — Sync ยังไม่สำเร็จ');
-      toast('⚠️ บันทึกในเครื่องแล้ว แต่ Sync ยังไม่สำเร็จ','warn');
+      setSyncStatus('error','บันทึกไม่สำเร็จ');
+      toast('❌ บันทึกไม่สำเร็จ กรุณาลองใหม่ (ค่าที่กรอกยังอยู่)','err');
     }
   }finally{ btn.disabled = false; btn.innerHTML = '✅ บันทึกข้อมูล'; }
 }
@@ -2743,7 +2799,13 @@ function populateDDs(){
   const cs = document.getElementById('chart-sub');
   if(cs) cs.innerHTML = cOpts;
 }
-function renderStats(){
+/* The Data-tab stat tiles were removed: after the rolling 90-day record
+   window was introduced, three of the four counters (total records,
+   meters recorded, total kWh) silently described the loaded window
+   rather than the real dataset, which made them misleading. Kept as a
+   no-op so the existing call sites need no changes. */
+function renderStats(){ return;
+
   const total    = records.length;
   const subsDone = new Set(records.map(r => r.meterId)).size;
   const today    = new Date().toISOString().split('T')[0];
@@ -3222,18 +3284,14 @@ function sumGroupOnDay(meterMap, col, dateStr, allDates){
    mean that narrowing the admin record window (see ADMIN_RECORD_WINDOW_DAYS)
    also silently removed older months from the dropdown — the numbers were
    always available, you just couldn't ask for them. */
-const REPORT_MONTHS_BACK = 36;   // 3 years of selectable months
-const REPORT_YEARS_BACK  = 5;    // years offered in the yearly-view picker
-
 function buildMonthOptions(){
   const MN = ['','ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
-  const months = [];
-  const cur = new Date();
-  cur.setDate(1);
-  for(let i = 0; i < REPORT_MONTHS_BACK; i++){
-    months.push(cur.getFullYear() + '-' + String(cur.getMonth() + 1).padStart(2, '0'));
-    cur.setMonth(cur.getMonth() - 1);
-  }
+  // Only months that actually hold data (from the server), so picking a month
+  // can never land on an empty report. Falls back to whatever is in `records`
+  // if the month list hasn't loaded yet.
+  const months = (availableMonths && availableMonths.length)
+    ? availableMonths.slice()
+    : [...new Set(records.map(r => String(r.date).slice(0,7)))].filter(Boolean).sort().reverse();
   const optsHtml = months.map(m => { const [y,mm]=m.split('-'); return `<option value="${m}">${MN[parseInt(mm)]} ${y}</option>`; }).join('');
   const sel = document.getElementById('rep-month');
   if(sel){
@@ -3846,9 +3904,16 @@ function initG9Pickers(){
   records.forEach(function(r){ var d = String(r.date).slice(0,10); if(d && dates.indexOf(d)<0) dates.push(d); });
   dates.sort();
 
-  var thisYear = new Date().getFullYear();
+  // Years that actually contain data — derived from the server-provided month
+  // list, falling back to the loaded records if it hasn't arrived yet.
+  var srcMonths = (availableMonths && availableMonths.length)
+    ? availableMonths
+    : dates.map(function(d){ return d.slice(0,7); });
   var years = [];
-  for(var y = thisYear; y > thisYear - REPORT_YEARS_BACK; y--) years.push(String(y));
+  srcMonths.forEach(function(m){ var y = m.slice(0,4); if(y && years.indexOf(y) < 0) years.push(y); });
+  years.sort().reverse();
+  if(!years.length) years = [String(new Date().getFullYear())];
+  var thisYear = years[0];
   var ySel = document.getElementById('g9-year');
   if(ySel){
     var prevYear = ySel.value;
