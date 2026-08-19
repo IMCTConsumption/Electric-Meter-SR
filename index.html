@@ -563,6 +563,137 @@
 
 /* Focus-visible baseline */
 :focus-visible { outline: 2px solid var(--rd-accent); outline-offset: 2px; border-radius: 4px; }
+/* ═══════════════════════════════════════════════════════════
+   REDESIGN LAYER — SESSION 2
+   Meter card ("information card") + zone header restyle.
+   Entry-screen grouping only — does NOT touch _REPORT_GROUPS math.
+   =========================================================== */
+#zone-areas { display: flex; flex-direction: column; gap: 20px; }
+
+#zone-areas .zone-block {
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin-bottom: 0;
+}
+#zone-areas .zone-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-family: var(--rd-font-display);
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--rd-ink);
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--rd-line);
+}
+#zone-areas .zone-title .zt-icon { font-size: 15px; line-height: 1; }
+#zone-areas .zone-title .zt-name { flex: 0 0 auto; }
+#zone-areas .zone-title .zt-count {
+  font-family: var(--rd-font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--rd-ink-3);
+  background: var(--rd-line-2);
+  padding: 2px 8px;
+  border-radius: 100px;
+  letter-spacing: .02em;
+}
+#zone-areas .zone-title::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--rd-line);
+}
+
+#zone-areas .sub-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 10px;
+}
+@media (min-width: 640px) {
+  #zone-areas .sub-grid { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
+}
+@media (min-width: 1100px) {
+  #zone-areas .sub-grid { grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); }
+}
+
+/* Information card — replaces the old small button-like tile.
+   Left edge carries a 4px status bar: red = not recorded today,
+   green = recorded today. This is independent from `.sel` (currently
+   open) and `.has-data` (ever recorded, kept for back-compat but no
+   longer the primary signal). */
+#zone-areas .sub-card {
+  position: relative;
+  background: var(--rd-surface-2);
+  border: 1px solid var(--rd-line);
+  border-left: 4px solid var(--rd-danger);
+  border-radius: 8px;
+  padding: 12px 14px 12px 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: var(--rd-transition), transform .12s ease;
+  min-height: 68px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  user-select: none;
+}
+#zone-areas .sub-card:active { transform: scale(.97); }
+#zone-areas .sub-card:hover:not(.sel) {
+  border-color: var(--rd-ink-3);
+  box-shadow: var(--rd-shadow-sm);
+}
+#zone-areas .sub-card.today { border-left-color: var(--rd-success); }
+#zone-areas .sub-card.sel {
+  border-color: var(--rd-accent);
+  border-left-color: var(--rd-accent);
+  background: var(--rd-accent-soft);
+  box-shadow: 0 0 0 1px var(--rd-accent);
+}
+
+#zone-areas .sc-id {
+  font-family: var(--rd-font-mono);
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--rd-ink);
+  letter-spacing: .01em;
+}
+#zone-areas .sc-name {
+  font-family: var(--rd-font-th);
+  font-size: 12px;
+  color: var(--rd-ink-2);
+  line-height: 1.4;
+  word-break: break-word;
+}
+.sc-status-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 2px;
+}
+.sc-status-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--rd-danger);
+  flex-shrink: 0;
+}
+#zone-areas .sub-card.today .sc-status-dot { background: var(--rd-success); }
+.sc-status-txt {
+  font-family: var(--rd-font-mono);
+  font-size: 10px;
+  color: var(--rd-ink-3);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+/* Legacy dot from session 1 / pre-redesign — hidden, card now uses the
+   left-border + sc-status-row instead. Kept selector so nothing breaks
+   if any old markup still emits it. */
+#zone-areas .sc-dot { display: none; }
+
 
 
 :root {
@@ -624,8 +755,8 @@ body{font-family:var(--font-body);font-size:var(--fs-md);line-height:1.5;backgro
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
 .card{transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease}
 .card:hover{transform:translateY(-2px);box-shadow:var(--shadow-md);border-color:var(--border-hi)}
-.sub-card{transition:var(--trans),transform .12s ease}
-.sub-card:active{transform:scale(.96)}
+#zone-areas .sub-card{transition:var(--trans),transform .12s ease}
+#zone-areas .sub-card:active{transform:scale(.96)}
 .stat{transition:transform .2s ease,box-shadow .2s ease}
 .stat:hover{transform:translateY(-2px);box-shadow:var(--shadow-md)}
 .btn{transition:var(--trans),transform .1s ease}
@@ -650,17 +781,6 @@ body{font-family:var(--font-body);font-size:var(--fs-md);line-height:1.5;backgro
 .card-title{font-size:var(--fs-xs);font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--accent);margin-bottom:12px;display:flex;align-items:center;gap:6px}
 .card-title::after{content:'';flex:1;height:1px;background:var(--border)}
 .rec-badge{position:absolute;top:14px;right:14px;background:var(--surface-3);border:1px solid var(--border);border-radius:20px;padding:2px 9px;font-size:var(--fs-xs);color:var(--text-3);font-weight:600}
-.zone-block{background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-md);padding:10px;margin-bottom:8px}
-.zone-title{font-size:var(--fs-sm);font-weight:700;color:var(--purple);margin-bottom:8px;display:flex;align-items:center;gap:5px}
-.sub-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:10px;}
-.sub-card{background:var(--surface-3);border:1.5px solid var(--border);border-radius:var(--r-md);padding:12px 11px;cursor:pointer;text-align:left;transition:var(--trans);position:relative;min-height:64px;display:flex;flex-direction:column;justify-content:center;user-select:none}
-.sub-card:active{transform:scale(.93)}
-.sub-card.sel{border-color:var(--accent);background:var(--accent-dim);box-shadow:0 0 0 1px var(--accent-border)}
-.sub-card:hover:not(.sel){border-color:var(--border-hi);background:var(--surface-4)}
-.sc-name{font-size:var(--fs-xs);font-weight:600;color:var(--text-1);line-height:1.35;margin-bottom:5px;word-break:break-word;padding-right:12px}
-.sc-id{font-size:10px;font-weight:600;color:var(--text-3);font-family:var(--font-mono);letter-spacing:.2px}
-.sc-dot{width:5px;height:5px;border-radius:50%;background:var(--border);position:absolute;top:8px;right:8px;transition:var(--trans)}
-.sub-card.has-data .sc-dot{background:var(--green);box-shadow:0 0 5px var(--green)}
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:11px 16px;border:none;border-radius:var(--r-md);font-size:var(--fs-md);font-weight:700;cursor:pointer;transition:var(--trans);font-family:var(--font-body);letter-spacing:.2px;min-height:44px}
 .btn:active{transform:scale(.97)}
 .btn:disabled{opacity:.45;pointer-events:none}
@@ -763,15 +883,12 @@ tr:hover td{background:var(--surface-2)}
   .stats-row{gap:6px}
 }
 @media(min-width:600px){
-  .sub-grid{grid-template-columns:repeat(auto-fill,minmax(220px,1fr));}
   .stats-row{grid-template-columns:repeat(4,1fr)}
   .qr-grid{grid-template-columns:repeat(3,1fr)}
   .f-3col{grid-template-columns:1fr 1fr 1fr}
 }
 @media(min-width:900px){
   :root{ --fs-xs:14px; --fs-sm:16px; --fs-md:18px; --fs-lg:20px; --fs-xl:28px; --fs-2xl:40px; }
-  .sub-grid{grid-template-columns:repeat(auto-fill,minmax(200px,1fr))}
-  .sc-id{font-size:12px}
   .mb-label,.mb-unit{font-size:12px}
   .qi-id{font-size:12px}
   .sub-row-idtag{font-size:12px}
@@ -1129,7 +1246,9 @@ i svg{ width:1em; height:1em; display:inline-block; vertical-align:-0.12em; }
         <button class="btn btn-ghost btn-sm" onclick="clearFilter()">✖ ล้าง</button>
         <button class="btn btn-yellow btn-sm" onclick="exportExcel()">📥 Excel</button>
         <button class="btn btn-yellow btn-sm" onclick="loadFromServer()">🔄 Refresh</button>
+        <button class="btn btn-ghost btn-sm" id="load-all-btn" onclick="loadAllAdminRecords()">📚 โหลดข้อมูลทั้งหมด</button>
       </div>
+      <div class="info-box" id="record-window-notice" style="display:none;margin-top:10px;margin-bottom:0"></div>
     </div>
 
     <div class="card">
@@ -1850,20 +1969,73 @@ async function apiPostAuthed(body){
 
 /* ════════════ SCOPED DATA LOADERS ════════════ */
 let meterStatus = {};
+let meterStatusToday = {};  // {meterId: true/false} — has a reading dated TODAY (Asia/Bangkok)
 let activeSubRecent = [];
 
 async function loadMeterStatus(){
+  // ONE request returns both maps (see getMeterStatus in Code.gs). Kept as a
+  // single round-trip on purpose: the /exec endpoint is the slowest hop and
+  // has shown intermittent 404s under parallel load, so we don't fan out here.
   try{
     const res = await apiPost({ action:'getMeterStatus', meterIds: subs.map(s => s.id) });
-    if(res && res.success && res.status) meterStatus = res.status;
+    if(res && res.success){
+      if(res.status) meterStatus = res.status;
+      if(res.today)  meterStatusToday = res.today;
+    }
   }catch(e){ console.warn('⚠️ โหลดสถานะมิเตอร์ไม่ได้:', e.message); }
 }
-async function loadAdminRecords(){
+/* ── Admin record window ──
+   The full history is thousands of rows and is the single slowest thing in
+   the app: loading it blocks the entry screen from painting. Day-to-day work
+   (checking today's readings, fixing a wrong entry) only ever touches recent
+   data, so we load a rolling window by default and let the admin pull the
+   full set on demand from the Data tab.
+   NOTE: the Summary/report numbers do NOT come from this array — they're
+   computed server-side by getMonthlySummary — so narrowing this window never
+   changes any reported consumption figure. */
+const ADMIN_RECORD_WINDOW_DAYS = 90;
+let recordsWindowFrom = null;   // 'YYYY-MM-DD', or null when the full set is loaded
+
+function _windowStartDate(days){
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  return d.toISOString().slice(0, 10);
+}
+
+async function loadAdminRecords(opts){
+  const loadAll = !!(opts && opts.all);
+  const dateFrom = loadAll ? null : _windowStartDate(ADMIN_RECORD_WINDOW_DAYS);
   try{
-    const res = await apiPostAuthed({ action:'getRawRecords' });
+    const payload = { action:'getRawRecords' };
+    if(dateFrom) payload.dateFrom = dateFrom;
+    const res = await apiPostAuthed(payload);
     records = computeUsed(res.records || []);
+    recordsWindowFrom = dateFrom;
     persist();
+    updateRecordWindowNotice();
   }catch(e){ /* apiPostAuthed already surfaced the error toast */ }
+}
+
+async function loadAllAdminRecords(){
+  const btn = document.getElementById('load-all-btn');
+  if(btn){ btn.disabled = true; btn.innerHTML = '⏳ กำลังโหลด...'; }
+  setSyncStatus('busy','กำลังโหลดข้อมูลทั้งหมด...');
+  await loadAdminRecords({ all:true });
+  renderAll();
+  setSyncStatus('ok','โหลดข้อมูลทั้งหมดแล้ว — ' + records.length + ' รายการ');
+  if(btn){ btn.disabled = false; btn.innerHTML = '📚 โหลดข้อมูลทั้งหมด'; }
+}
+
+function updateRecordWindowNotice(){
+  const el = document.getElementById('record-window-notice');
+  if(!el) return;
+  if(recordsWindowFrom){
+    el.style.display = 'block';
+    el.innerHTML = 'กำลังแสดงข้อมูล <strong>' + ADMIN_RECORD_WINDOW_DAYS + ' วันล่าสุด</strong> (ตั้งแต่ ' + fmtDate(recordsWindowFrom) + ') · ' + records.length + ' รายการ — ตัวเลขในหน้าสรุปไม่ได้รับผลกระทบ';
+  } else {
+    el.style.display = 'block';
+    el.innerHTML = 'กำลังแสดง <strong>ข้อมูลทั้งหมด</strong> · ' + records.length + ' รายการ';
+  }
 }
 async function loadRecentForSub(meterId, limit){
   const res = await apiPost({ action:'getRecentRecords', meterId, limit: limit || 5, token: sessionToken });
@@ -2099,7 +2271,7 @@ function goTab(name){
   const idx   = TAB_ORDER.indexOf(name);
   const tabEl = document.querySelectorAll('.tab')[idx];
   if(tabEl) tabEl.classList.add('active');
-  if(name === 'data')     { renderData(); renderStats(); }
+  if(name === 'data')     { renderData(); renderStats(); updateRecordWindowNotice(); }
   if(name === 'chart')    { populateDDs(); setSubQuick('30d'); buildCompareGroupOptions(); initG9Pickers(); renderG9Chart(); }
   if(name === 'qr')       { renderQR(); }
   if(name === 'settings') { renderSubList(); renderCalendarList(); }
@@ -2234,15 +2406,21 @@ function renderZoneAreas(){
     const icon  = key === '__OTHER__' ? '📦'   : zoneIcon(key);
     const block = document.createElement('div');
     block.className = 'zone-block';
-    block.innerHTML = `<div class="zone-title">${icon} ${esc(label)} <span style="color:var(--text-3);font-weight:400">(${list.length})</span></div>`;
+    block.innerHTML = `<div class="zone-title"><span class="zt-icon">${icon}</span><span class="zt-name">${esc(label)}</span><span class="zt-count">${list.length}</span></div>`;
     const grid = document.createElement('div');
     grid.className = 'sub-grid';
     list.forEach(s => {
-      const hasData = !!meterStatus[s.id];
-      const isSel   = activeSub && activeSub.id === s.id;
+      const recordedToday = !!meterStatusToday[s.id];
+      const isSel = activeSub && activeSub.id === s.id;
       const d = document.createElement('div');
-      d.className = 'sub-card' + (isSel?' sel':'') + (hasData?' has-data':'');
-      d.innerHTML = `<div class="sc-dot"></div><div class="sc-name">${esc(s.name)}</div><div class="sc-id">${esc(s.id)}</div>`;
+      d.className = 'sub-card' + (isSel ? ' sel' : '') + (recordedToday ? ' today' : '');
+      d.innerHTML = `
+        <div class="sc-id">${esc(s.id)}</div>
+        <div class="sc-name">${esc(s.name)}</div>
+        <div class="sc-status-row">
+          <span class="sc-status-dot"></span>
+          <span class="sc-status-txt">${recordedToday ? 'บันทึกแล้ววันนี้' : 'ยังไม่บันทึกวันนี้'}</span>
+        </div>`;
       d.onclick = () => selectSub(s.id);
       grid.appendChild(d);
     });
@@ -3036,15 +3214,36 @@ function sumGroupOnDay(meterMap, col, dateStr, allDates){
 }
 
 /* ── buildMonthOptions ── */
+/* Months offered in the report pickers.
+   Generated from the CALENDAR, not from the loaded `records` array. The two
+   are deliberately decoupled: report figures are computed server-side by
+   getMonthlySummary, which can answer for any month regardless of what the
+   client happens to have in memory. Deriving the list from `records` used to
+   mean that narrowing the admin record window (see ADMIN_RECORD_WINDOW_DAYS)
+   also silently removed older months from the dropdown — the numbers were
+   always available, you just couldn't ask for them. */
+const REPORT_MONTHS_BACK = 36;   // 3 years of selectable months
+const REPORT_YEARS_BACK  = 5;    // years offered in the yearly-view picker
+
 function buildMonthOptions(){
-  const months = [...new Set(records.map(r => String(r.date).slice(0,7)))].filter(Boolean).sort().reverse();
   const MN = ['','ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+  const months = [];
+  const cur = new Date();
+  cur.setDate(1);
+  for(let i = 0; i < REPORT_MONTHS_BACK; i++){
+    months.push(cur.getFullYear() + '-' + String(cur.getMonth() + 1).padStart(2, '0'));
+    cur.setMonth(cur.getMonth() - 1);
+  }
   const optsHtml = months.map(m => { const [y,mm]=m.split('-'); return `<option value="${m}">${MN[parseInt(mm)]} ${y}</option>`; }).join('');
   const sel = document.getElementById('rep-month');
-  if(sel) sel.innerHTML = optsHtml;
+  if(sel){
+    const prevMonth = sel.value;
+    sel.innerHTML = optsHtml;
+    if(prevMonth && months.includes(prevMonth)) sel.value = prevMonth;
+  }
   // เดือนของ "รายละเอียดรายมิเตอร์แยกตาม Zone" เป็น dropdown แยกอิสระของตัวเอง — เลือกดูคนละเดือน
-  // กับตารางรายงานหลักด้านบนได้ ใช้รายชื่อเดือนชุดเดียวกัน (มาจาก records ชุดเดียวกัน) แต่ค่าที่เลือก
-  // ไม่ผูกกัน แต่ละอันจดจำค่าที่เลือกไว้ของตัวเอง
+  // กับตารางรายงานหลักด้านบนได้ ใช้รายชื่อเดือนชุดเดียวกัน (สร้างจากปฏิทิน ไม่ใช่จาก records)
+  // แต่ค่าที่เลือกไม่ผูกกัน แต่ละอันจดจำค่าที่เลือกไว้ของตัวเอง
   const zoneSel = document.getElementById('zone-rep-month');
   if(zoneSel){
     const prevZoneMonth = zoneSel.value;
@@ -3638,17 +3837,29 @@ function navG9(dir){
   renderG9Chart();
 }
 function initG9Pickers(){
+  // Default the pickers to the most recent day/month we actually have loaded,
+  // but build the YEAR list from the calendar — the year <select> is the only
+  // one of the three that can't be typed into freely, so deriving it from
+  // `records` would hard-block older years whenever the admin record window is
+  // narrow. The chart data itself is fetched server-side per selected range.
   var dates = [];
   records.forEach(function(r){ var d = String(r.date).slice(0,10); if(d && dates.indexOf(d)<0) dates.push(d); });
   dates.sort();
+
+  var thisYear = new Date().getFullYear();
+  var years = [];
+  for(var y = thisYear; y > thisYear - REPORT_YEARS_BACK; y--) years.push(String(y));
+  var ySel = document.getElementById('g9-year');
+  if(ySel){
+    var prevYear = ySel.value;
+    ySel.innerHTML = years.map(function(y){return '<option value="'+y+'">'+y+'</option>';}).join('');
+    ySel.value = (prevYear && years.indexOf(prevYear) >= 0) ? prevYear : String(thisYear);
+  }
+
   if(!dates.length) return;
   document.getElementById('g9-date').value = dates.length >= 2 ? dates[dates.length-2] : dates[dates.length-1];
   var months = []; dates.forEach(function(d){ var m=d.slice(0,7); if(months.indexOf(m)<0) months.push(m); }); months.sort();
   document.getElementById('g9-month').value = months[months.length-1] || '';
-  var years = []; dates.forEach(function(d){ var y=d.slice(0,4); if(years.indexOf(y)<0) years.push(y); }); years.sort();
-  var ySel = document.getElementById('g9-year');
-  ySel.innerHTML = years.map(function(y){return '<option value="'+y+'">'+y+'</option>';}).join('');
-  ySel.value = years[years.length-1] || '';
 }
 
 let g9ReqId = 0;
