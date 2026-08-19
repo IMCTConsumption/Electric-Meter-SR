@@ -217,12 +217,15 @@
 
 /* ─── Sidebar drawer ─── */
 .rd-drawer-overlay {
+  /* Above #entry-section, which is position:fixed with z-index:100 — the
+     drawer previously sat at 50 and was painted underneath the entry screen,
+     so opening the menu while a meter was open appeared to do nothing. */
   position: fixed; inset: 0;
   background: rgba(10,22,40,.45);
   opacity: 0;
   visibility: hidden;
   transition: var(--rd-transition);
-  z-index: 40;
+  z-index: 200;
   backdrop-filter: blur(2px);
 }
 .rd-drawer-overlay.open { opacity: 1; visibility: visible; }
@@ -230,14 +233,18 @@
 .rd-drawer {
   position: fixed;
   top: 0; left: 0;
+  /* dvh tracks the *visible* viewport, so the sign-out row at the bottom of
+     the drawer isn't pushed under the mobile browser's toolbar. vh is kept
+     first as the fallback for browsers without dvh support. */
   height: 100vh;
+  height: 100dvh;
   width: 280px;
   max-width: 85vw;
   background: var(--rd-surface-2);
   border-right: 1px solid var(--rd-line);
   transform: translateX(-100%);
   transition: transform var(--rd-transition);
-  z-index: 50;
+  z-index: 201;
   display: flex;
   flex-direction: column;
   font-family: var(--rd-font-body);
@@ -1965,10 +1972,16 @@ function perfEnd(name){
   performance.clearMeasures(name);
 }
 
+/* Per-action timeout. getRawRecords walks the whole sheet server-side and
+   legitimately takes longer than a status ping, so a single flat ceiling
+   either cut off the heavy call or made the light ones hang. */
+const SLOW_ACTIONS = { getRawRecords: 45000, getMonthlySummary: 30000, getAvailableMonths: 20000 };
+
 async function apiPost(body, retries = 2){
+  const timeoutMs = (body && SLOW_ACTIONS[body.action]) || 12000;
   for(let attempt = 0; attempt <= retries; attempt++){
     const ctrl = new AbortController();
-    const tid  = setTimeout(() => ctrl.abort(), 10000);
+    const tid  = setTimeout(() => ctrl.abort(), timeoutMs);
     try{
       const res  = await fetch(API_URL, { method:'POST', body:JSON.stringify(body), signal:ctrl.signal });
       clearTimeout(tid);
@@ -2052,7 +2065,20 @@ function _windowStartDate(days){
   return d.toISOString().slice(0, 10);
 }
 
+/* Guards against the same heavy pull running twice concurrently. handleLogin()
+   and loadFromServer() both request the admin record set after a login, and on
+   Apps Script two simultaneous full-sheet reads block each other long enough
+   for both to hit the client timeout. Callers now share one in-flight promise. */
+let _adminRecordsInFlight = null;
+
 async function loadAdminRecords(opts){
+  if(_adminRecordsInFlight) return _adminRecordsInFlight;
+  _adminRecordsInFlight = _loadAdminRecordsInner(opts);
+  try { return await _adminRecordsInFlight; }
+  finally { _adminRecordsInFlight = null; }
+}
+
+async function _loadAdminRecordsInner(opts){
   const loadAll = !!(opts && opts.all);
   const dateFrom = loadAll ? null : _windowStartDate(ADMIN_RECORD_WINDOW_DAYS);
   try{
