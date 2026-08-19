@@ -7,6 +7,564 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;700&display=swap" rel="stylesheet">
 <style>
+
+/* ═══════════════════════════════════════════════════════════
+   REDESIGN LAYER — SESSION 1
+   Design tokens matched to the IMCT Consumption hub (navy + cyan + off-white),
+   with dark-mode parity. Component styles for the new header + sidebar drawer +
+   centered login. All original panel/card/button styles below remain untouched.
+   =========================================================== */
+:root {
+  --rd-ink:          #0A1628;
+  --rd-ink-2:        #3A4A5F;
+  --rd-ink-3:        #6B7A90;
+  --rd-line:         #E5E9F0;
+  --rd-line-2:       #F0F3F8;
+  --rd-surface:      #FBFCFE;
+  --rd-surface-2:    #FFFFFF;
+  --rd-accent:       #00D4FF;
+  --rd-accent-ink:   #003D4A;
+  --rd-accent-soft:  #E6FAFF;
+  --rd-success:      #00B87C;
+  --rd-success-soft: #E6F7F0;
+  --rd-danger:       #EF4444;
+  --rd-danger-soft:  #FEE7E7;
+  --rd-warning:      #F59E0B;
+  --rd-warning-soft: #FEF3E2;
+  --rd-shadow-sm:    0 1px 2px rgba(10,22,40,.04);
+  --rd-shadow:       0 4px 16px rgba(10,22,40,.06);
+  --rd-shadow-lg:    0 12px 32px rgba(10,22,40,.10);
+  --rd-radius:       10px;
+  --rd-radius-lg:    14px;
+  --rd-transition:   200ms cubic-bezier(.4,0,.2,1);
+  --rd-font-display: 'Inter', system-ui, -apple-system, sans-serif;
+  --rd-font-body:    'Inter', 'Sarabun', 'IBM Plex Sans Thai', system-ui, sans-serif;
+  --rd-font-mono:    'IBM Plex Mono', 'SF Mono', Consolas, monospace;
+  --rd-font-th:      'Sarabun', 'IBM Plex Sans Thai', 'Inter', system-ui, sans-serif;
+  /* Button tokens — intentionally do NOT flip with theme. A primary button
+     stays "dark navy bg + white text" in light mode; in dark mode it becomes
+     the cyan accent (dark navy text) so it still reads as the loudest
+     actionable element on the page instead of blending into a light --rd-ink
+     that would otherwise turn white-on-white. */
+  --rd-btn-bg:       var(--rd-ink);
+  --rd-btn-bg-hover: #1A2B45;
+  --rd-btn-text:     #FFFFFF;
+}
+[data-theme="dark"] {
+  --rd-btn-bg:       var(--rd-accent);
+  --rd-btn-bg-hover: #33DDFF;
+  --rd-btn-text:     #001824;
+}
+[data-theme="dark"] {
+  --rd-ink:          #E8F0FF;
+  --rd-ink-2:        #A8B4C8;
+  --rd-ink-3:        #6B7A90;
+  --rd-line:         #1E2A3D;
+  --rd-line-2:       #172131;
+  --rd-surface:      #0B1220;
+  --rd-surface-2:    #111A2B;
+  --rd-accent-soft:  rgba(0,212,255,.10);
+  --rd-success-soft: rgba(0,184,124,.14);
+  --rd-danger-soft:  rgba(239,68,68,.14);
+  --rd-warning-soft: rgba(245,158,11,.14);
+  --rd-shadow-sm:    0 1px 2px rgba(0,0,0,.30);
+  --rd-shadow:       0 4px 16px rgba(0,0,0,.35);
+  --rd-shadow-lg:    0 12px 32px rgba(0,0,0,.45);
+}
+
+/* Preload webfonts (light — Inter + Mono + Sarabun) */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&family=Sarabun:wght@400;500;600&display=swap');
+
+/* ─── New header ─── */
+.rd-header {
+  position: sticky; top: 0; z-index: 30;
+  height: 60px;
+  background: rgba(255,255,255,.88);
+  backdrop-filter: saturate(1.2) blur(10px);
+  border-bottom: 1px solid var(--rd-line);
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 16px;
+  padding: 0 20px;
+  font-family: var(--rd-font-body);
+  color: var(--rd-ink);
+}
+[data-theme="dark"] .rd-header { background: rgba(17,26,43,.88); }
+
+.rd-hdr-left { display: flex; align-items: center; gap: 12px; }
+.rd-menu-btn {
+  width: 40px; height: 40px;
+  border-radius: 8px;
+  background: transparent;
+  border: none;
+  color: var(--rd-ink);
+  cursor: pointer;
+  display: grid; place-items: center;
+  transition: var(--rd-transition);
+}
+.rd-menu-btn:hover { background: var(--rd-line-2); }
+.rd-menu-btn:focus-visible { outline: 2px solid var(--rd-accent); outline-offset: 2px; }
+.rd-menu-btn svg { width: 20px; height: 20px; }
+
+.rd-brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.rd-brand-mark {
+  width: 30px; height: 30px;
+  border-radius: 7px;
+  background: linear-gradient(135deg, #0A1628 0%, #1A2B45 100%);  /* fixed navy — brand mark, not theme-reactive */
+  display: grid; place-items: center;
+  color: var(--rd-accent);
+  flex-shrink: 0;
+}
+.rd-brand-mark svg { width: 16px; height: 16px; }
+.rd-brand-title {
+  font-family: var(--rd-font-display);
+  font-weight: 600;
+  font-size: 14px;
+  letter-spacing: -.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rd-brand-code {
+  font-family: var(--rd-font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--rd-ink-3);
+  background: var(--rd-line-2);
+  padding: 2px 7px;
+  border-radius: 4px;
+  letter-spacing: .04em;
+  margin-left: 4px;
+  vertical-align: 1px;
+}
+
+/* Search bar */
+.rd-search {
+  position: relative;
+  max-width: 420px;
+  width: 100%;
+  justify-self: center;
+}
+.rd-search-input {
+  width: 100%;
+  height: 38px;
+  padding: 0 12px 0 38px;
+  border-radius: 8px;
+  border: 1px solid var(--rd-line);
+  background: var(--rd-surface);
+  color: var(--rd-ink);
+  font-family: var(--rd-font-body);
+  font-size: 13px;
+  transition: var(--rd-transition);
+  outline: none;
+}
+.rd-search-input::placeholder { color: var(--rd-ink-3); }
+.rd-search-input:focus {
+  border-color: var(--rd-accent);
+  background: var(--rd-surface-2);
+  box-shadow: 0 0 0 3px var(--rd-accent-soft);
+}
+.rd-search-icon {
+  position: absolute;
+  left: 12px; top: 50%;
+  transform: translateY(-50%);
+  color: var(--rd-ink-3);
+  pointer-events: none;
+}
+.rd-search-icon svg { width: 16px; height: 16px; display: block; }
+.rd-search-kbd {
+  position: absolute;
+  right: 10px; top: 50%;
+  transform: translateY(-50%);
+  font-family: var(--rd-font-mono);
+  font-size: 10px;
+  color: var(--rd-ink-3);
+  background: var(--rd-line-2);
+  padding: 2px 6px;
+  border-radius: 4px;
+  letter-spacing: .04em;
+  pointer-events: none;
+}
+
+.rd-hdr-right {
+  display: flex; align-items: center; gap: 8px;
+}
+.rd-icon-btn {
+  width: 38px; height: 38px;
+  border-radius: 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--rd-ink-2);
+  cursor: pointer;
+  display: grid; place-items: center;
+  transition: var(--rd-transition);
+}
+.rd-icon-btn:hover {
+  background: var(--rd-line-2);
+  color: var(--rd-ink);
+}
+.rd-icon-btn svg { width: 18px; height: 18px; }
+.rd-status-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--rd-ink-3);
+  margin-left: 4px;
+  transition: var(--rd-transition);
+  flex-shrink: 0;
+}
+.rd-status-dot.ok      { background: var(--rd-success); box-shadow: 0 0 0 3px var(--rd-success-soft); }
+.rd-status-dot.working { background: var(--rd-warning); box-shadow: 0 0 0 3px var(--rd-warning-soft); animation: rd-pulse 1.4s infinite; }
+.rd-status-dot.err     { background: var(--rd-danger);  box-shadow: 0 0 0 3px var(--rd-danger-soft);  }
+@keyframes rd-pulse {
+  0%, 100% { opacity: 1;   }
+  50%      { opacity: .35; }
+}
+
+/* Mobile: hide search until user opens drawer */
+@media (max-width: 720px) {
+  .rd-search { display: none; }
+  .rd-header { grid-template-columns: auto 1fr auto; padding: 0 12px; gap: 8px; }
+  .rd-brand-title { font-size: 13px; }
+}
+
+/* ─── Sidebar drawer ─── */
+.rd-drawer-overlay {
+  position: fixed; inset: 0;
+  background: rgba(10,22,40,.45);
+  opacity: 0;
+  visibility: hidden;
+  transition: var(--rd-transition);
+  z-index: 40;
+  backdrop-filter: blur(2px);
+}
+.rd-drawer-overlay.open { opacity: 1; visibility: visible; }
+
+.rd-drawer {
+  position: fixed;
+  top: 0; left: 0;
+  height: 100vh;
+  width: 280px;
+  max-width: 85vw;
+  background: var(--rd-surface-2);
+  border-right: 1px solid var(--rd-line);
+  transform: translateX(-100%);
+  transition: transform var(--rd-transition);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  font-family: var(--rd-font-body);
+  color: var(--rd-ink);
+}
+.rd-drawer.open { transform: translateX(0); box-shadow: var(--rd-shadow-lg); }
+
+.rd-drawer-head {
+  padding: 20px 20px 16px;
+  border-bottom: 1px solid var(--rd-line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.rd-drawer-title {
+  font-family: var(--rd-font-display);
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: -.01em;
+}
+.rd-drawer-close {
+  width: 32px; height: 32px;
+  border-radius: 6px;
+  background: transparent;
+  border: none;
+  color: var(--rd-ink-2);
+  cursor: pointer;
+  display: grid; place-items: center;
+  transition: var(--rd-transition);
+}
+.rd-drawer-close:hover { background: var(--rd-line-2); color: var(--rd-ink); }
+
+.rd-drawer-user {
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--rd-line);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.rd-drawer-avatar {
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  background: var(--rd-accent-soft);
+  color: var(--rd-accent-ink);
+  display: grid; place-items: center;
+  font-family: var(--rd-font-display);
+  font-weight: 700;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+.rd-drawer-usermeta { min-width: 0; }
+.rd-drawer-username {
+  font-family: var(--rd-font-display);
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--rd-ink);
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rd-drawer-role {
+  font-family: var(--rd-font-mono);
+  font-size: 10px;
+  color: var(--rd-ink-3);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  margin-top: 2px;
+}
+
+.rd-drawer-nav {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 12px;
+}
+.rd-drawer-section {
+  font-family: var(--rd-font-mono);
+  font-size: 10px;
+  color: var(--rd-ink-3);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  padding: 12px 12px 8px;
+}
+.rd-drawer-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  color: var(--rd-ink-2);
+  cursor: pointer;
+  transition: var(--rd-transition);
+  font-family: var(--rd-font-body);
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+  border: none;
+  background: transparent;
+  width: 100%;
+  text-align: left;
+}
+.rd-drawer-item:hover {
+  background: var(--rd-line-2);
+  color: var(--rd-ink);
+}
+.rd-drawer-item.active {
+  background: var(--rd-accent-soft);
+  color: var(--rd-accent-ink);
+  font-weight: 600;
+}
+[data-theme="dark"] .rd-drawer-item.active { color: var(--rd-accent); }
+.rd-drawer-item svg { width: 18px; height: 18px; flex-shrink: 0; }
+.rd-drawer-item.hidden { display: none; }
+
+.rd-drawer-foot {
+  border-top: 1px solid var(--rd-line);
+  padding: 12px;
+}
+
+/* ─── HIDE the original tab bar (drawer replaces it) ─── */
+#tabs-bar { display: none !important; }
+
+/* ─── LOGIN — centered card ─── */
+#login-gate {
+  background: var(--rd-surface) !important;
+  color: var(--rd-ink) !important;
+  font-family: var(--rd-font-body) !important;
+}
+[data-theme="dark"] #login-gate { background: var(--rd-surface) !important; }
+
+.rd-login-shell {
+  width: 100%;
+  max-width: 420px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+  padding: 20px;
+}
+.rd-login-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--rd-ink);
+  text-decoration: none;
+}
+.rd-login-brand:hover { opacity: .8; }
+.rd-login-brand-mark {
+  width: 44px; height: 44px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #0A1628 0%, #1A2B45 100%);  /* fixed navy — brand mark, not theme-reactive */
+  display: grid; place-items: center;
+  color: var(--rd-accent);
+}
+.rd-login-brand-mark svg { width: 22px; height: 22px; }
+.rd-login-brand-txt {
+  font-family: var(--rd-font-display);
+  font-weight: 700;
+  font-size: 16px;
+  letter-spacing: -.01em;
+}
+.rd-login-card {
+  width: 100%;
+  background: var(--rd-surface-2);
+  border: 1px solid var(--rd-line);
+  border-radius: var(--rd-radius-lg);
+  padding: 32px 28px;
+  box-shadow: var(--rd-shadow);
+}
+.rd-login-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--rd-font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--rd-ink-3);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  padding: 4px 10px;
+  background: var(--rd-line-2);
+  border-radius: 100px;
+  margin-bottom: 14px;
+}
+.rd-login-eyebrow::before {
+  content: '';
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--rd-accent);
+}
+.rd-login-title {
+  font-family: var(--rd-font-display);
+  font-weight: 700;
+  font-size: 22px;
+  letter-spacing: -.02em;
+  color: var(--rd-ink);
+  margin-bottom: 6px;
+}
+.rd-login-subtitle {
+  font-family: var(--rd-font-th);
+  font-size: 13px;
+  color: var(--rd-ink-2);
+  margin-bottom: 24px;
+}
+.rd-login-body { display: flex; flex-direction: column; gap: 14px; }
+.rd-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.rd-field-label {
+  font-family: var(--rd-font-display);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--rd-ink-2);
+  letter-spacing: .01em;
+}
+.rd-field-input {
+  height: 44px;
+  padding: 0 14px;
+  border-radius: 8px;
+  border: 1px solid var(--rd-line);
+  background: var(--rd-surface);
+  color: var(--rd-ink);
+  font-family: var(--rd-font-body);
+  font-size: 14px;
+  outline: none;
+  transition: var(--rd-transition);
+}
+.rd-field-input:focus {
+  border-color: var(--rd-accent);
+  box-shadow: 0 0 0 3px var(--rd-accent-soft);
+}
+.rd-btn-primary {
+  height: 46px;
+  padding: 0 20px;
+  border-radius: 8px;
+  background: var(--rd-btn-bg);
+  color: var(--rd-btn-text);
+  border: none;
+  font-family: var(--rd-font-display);
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  transition: var(--rd-transition);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.rd-btn-primary:hover { background: var(--rd-btn-bg-hover); transform: translateY(-1px); }
+.rd-btn-primary:active { transform: translateY(0); }
+.rd-btn-primary:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+.rd-btn-ghost {
+  background: transparent;
+  border: none;
+  color: var(--rd-ink-3);
+  font-family: var(--rd-font-body);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: var(--rd-transition);
+}
+.rd-btn-ghost:hover { color: var(--rd-ink); background: var(--rd-line-2); }
+.rd-login-err {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--rd-danger-soft);
+  color: var(--rd-danger);
+  font-family: var(--rd-font-body);
+  font-size: 12px;
+  display: none;
+}
+.rd-login-err.show { display: block; }
+.rd-login-toggle {
+  text-align: center;
+  padding-top: 10px;
+  border-top: 1px solid var(--rd-line);
+  margin-top: 8px;
+}
+.rd-login-toggle-txt {
+  font-family: var(--rd-font-body);
+  font-size: 12px;
+  color: var(--rd-ink-3);
+}
+.rd-login-toggle-link {
+  font-family: var(--rd-font-display);
+  font-weight: 600;
+  color: var(--rd-accent-ink);
+  cursor: pointer;
+  border: none;
+  background: none;
+  padding: 4px 6px;
+  font-size: 12px;
+  border-radius: 4px;
+  transition: var(--rd-transition);
+}
+[data-theme="dark"] .rd-login-toggle-link { color: var(--rd-accent); }
+.rd-login-toggle-link:hover { background: var(--rd-line-2); }
+.rd-login-foot {
+  text-align: center;
+  font-family: var(--rd-font-mono);
+  font-size: 11px;
+  color: var(--rd-ink-3);
+}
+.rd-login-foot a { color: var(--rd-ink-2); border-bottom: 1px solid transparent; text-decoration: none; }
+.rd-login-foot a:hover { border-bottom-color: var(--rd-accent); }
+
+/* Focus-visible baseline */
+:focus-visible { outline: 2px solid var(--rd-accent); outline-offset: 2px; border-radius: 4px; }
+
+
 :root {
   --font-body:'IBM Plex Sans Thai',sans-serif;
   --font-mono:'IBM Plex Mono',monospace;
@@ -251,93 +809,165 @@ i svg{ width:1em; height:1em; display:inline-block; vertical-align:-0.12em; }
 </style>
 </head>
 <body>
-<div id="login-gate" style="position:fixed;top:0;left:0;width:100%;height:100%;background:#0b1220;z-index:99999;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:'IBM Plex Sans Thai',sans-serif;color:#e8f0ff;padding:20px;">
-  <div style="background:#111827;border:1px solid #1e2e45;padding:32px 26px;border-radius:18px;box-shadow:0 12px 40px rgba(0,0,0,0.5);width:100%;max-width:380px;text-align:center;">
-    <div style="font-size:38px;margin-bottom:6px;">⚡</div>
-    <h2 style="margin:0 0 6px;color:#38bdf8;font-size:21px;font-weight:700;">Electric Meter Logger</h2>
-    <p style="font-size:13px;color:#8fa8c8;margin:0 0 26px;">เลือกรูปแบบการใช้งาน</p>
+<div id="login-gate" style="position:fixed;top:0;left:0;width:100%;height:100%;background:var(--rd-surface);z-index:99999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;overflow-y:auto;">
 
-    <div id="login-choose">
-      <button onclick="showRecorderLogin()"
-        style="width:100%;padding:16px;margin-bottom:12px;border:none;border-radius:11px;background:linear-gradient(135deg,#34d399,#059669);color:#04231a;font-weight:700;cursor:pointer;font-size:16px;">
-        📝 เข้าใช้งานบันทึก
-        <div style="font-size:11px;font-weight:400;margin-top:3px;opacity:0.8;">สำหรับผู้จดมิเตอร์ — ใช้รหัสผ่านทีม</div>
-      </button>
-      <button onclick="showAdminLogin()"
-        style="width:100%;padding:16px;border:1px solid #2a3f60;border-radius:11px;background:#1a2336;color:#8fa8c8;font-weight:700;cursor:pointer;font-size:16px;">
-        🔐 เข้าใช้งานแอดมิน
-        <div style="font-size:11px;font-weight:400;margin-top:3px;opacity:0.7;">ต้องใส่รหัสผ่าน</div>
-      </button>
+  <div class="rd-login-shell">
+
+    <a href="https://imctconsumption.github.io/" class="rd-login-brand" title="Back to hub">
+      <div class="rd-login-brand-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8Z"/>
+        </svg>
+      </div>
+      <div class="rd-login-brand-txt">IMCT Consumption</div>
+    </a>
+
+    <div class="rd-login-card">
+      <div class="rd-login-eyebrow" id="rd-login-mode-tag">Recorder access</div>
+      <div class="rd-login-title" id="rd-login-title">Sign in to log readings</div>
+      <div class="rd-login-subtitle" id="rd-login-subtitle">กรอกรหัสผ่านทีมจดมิเตอร์เพื่อเริ่มบันทึกค่า</div>
+
+      <!-- RECORDER form (default) -->
+      <div class="rd-login-body" id="login-recorder">
+        <div class="rd-field">
+          <label class="rd-field-label" for="login-pass">Passcode / รหัสผ่านทีม</label>
+          <input class="rd-field-input" type="password" id="login-pass" placeholder="กรอกรหัสผ่าน" autocomplete="current-password">
+        </div>
+        <div class="rd-login-err" id="login-err"></div>
+        <button class="rd-btn-primary" id="login-btn" onclick="handleRecorderLogin()">
+          Continue
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </button>
+        <div class="rd-login-toggle">
+          <span class="rd-login-toggle-txt">แอดมิน / IT?</span>
+          <button class="rd-login-toggle-link" onclick="rdShowAdmin()">Admin access</button>
+        </div>
+      </div>
+
+      <!-- ADMIN form (hidden by default) -->
+      <div class="rd-login-body" id="login-admin" style="display:none">
+        <div class="rd-field">
+          <label class="rd-field-label" for="login-user">Username</label>
+          <input class="rd-field-input" type="text" id="login-user" placeholder="admin" autocomplete="username">
+        </div>
+        <div class="rd-field">
+          <label class="rd-field-label" for="login-pass-2">Password</label>
+          <input class="rd-field-input" type="password" id="login-pass-2" placeholder="••••••••" autocomplete="current-password">
+        </div>
+        <div class="rd-login-err" id="login-err-2"></div>
+        <button class="rd-btn-primary" onclick="rdAdminSubmit()">
+          Sign in as admin
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </button>
+        <div class="rd-login-toggle">
+          <span class="rd-login-toggle-txt">Not an admin?</span>
+          <button class="rd-login-toggle-link" onclick="rdShowRecorder()">Back to recorder</button>
+        </div>
+      </div>
     </div>
 
-    <div id="login-recorder" style="display:none;">
-      <div style="text-align:left;margin-bottom:20px;">
-        <label style="font-size:12px;display:block;margin-bottom:5px;color:#8fa8c8;">รหัสผ่านทีมจดมิเตอร์</label>
-        <input type="password" id="recorder-pass" autocomplete="current-password"
-          style="width:100%;padding:11px;border:1px solid #2a3f60;border-radius:8px;background:#1a2336;color:#fff;box-sizing:border-box;font-size:15px;" placeholder="••••••••">
-      </div>
-      <button id="recorder-login-btn" onclick="handleRecorderLogin()"
-        style="width:100%;padding:13px;border:none;border-radius:9px;background:linear-gradient(135deg,#34d399,#059669);color:#04231a;font-weight:700;cursor:pointer;font-size:15px;">
-        เข้าสู่ระบบ 🔓
-      </button>
-      <button onclick="backToChoose()"
-        style="width:100%;padding:10px;margin-top:10px;border:none;border-radius:9px;background:transparent;color:#4e6a8a;cursor:pointer;font-size:13px;">
-        ← กลับ
-      </button>
-      <div id="recorder-login-err" style="color:#f87171;font-size:13px;margin-top:12px;display:none;"></div>
-      <p style="font-size:11px;color:#4e6a8a;margin-top:14px;">เข้าสู่ระบบครั้งเดียว ใช้งานได้ 4 ชั่วโมง แม้ปิดแล้วสแกน QR ใหม่</p>
+    <div class="rd-login-foot">
+      Need help? <a href="mailto:IMCT_441_FC@isuzu.com">IMCT_441_FC@isuzu.com</a> · Ext. 2486, 2433
     </div>
 
-    <div id="login-admin" style="display:none;">
-      <div style="text-align:left;margin-bottom:14px;">
-        <label style="font-size:12px;display:block;margin-bottom:5px;color:#8fa8c8;">ชื่อผู้ใช้งาน</label>
-        <input type="text" id="login-user" autocomplete="username"
-          style="width:100%;padding:11px;border:1px solid #2a3f60;border-radius:8px;background:#1a2336;color:#fff;box-sizing:border-box;font-size:15px;" placeholder="admin">
-      </div>
-      <div style="text-align:left;margin-bottom:20px;">
-        <label style="font-size:12px;display:block;margin-bottom:5px;color:#8fa8c8;">รหัสผ่าน</label>
-        <input type="password" id="login-pass" autocomplete="current-password"
-          style="width:100%;padding:11px;border:1px solid #2a3f60;border-radius:8px;background:#1a2336;color:#fff;box-sizing:border-box;font-size:15px;" placeholder="••••••••">
-      </div>
-      <button id="login-btn" onclick="handleLogin()"
-        style="width:100%;padding:13px;border:none;border-radius:9px;background:linear-gradient(135deg,#38bdf8,#0284c7);color:#fff;font-weight:700;cursor:pointer;font-size:15px;">
-        เข้าสู่ระบบ 🔓
-      </button>
-      <button onclick="backToChoose()"
-        style="width:100%;padding:10px;margin-top:10px;border:none;border-radius:9px;background:transparent;color:#4e6a8a;cursor:pointer;font-size:13px;">
-        ← กลับ
-      </button>
-      <div id="login-err" style="color:#f87171;font-size:13px;margin-top:12px;display:none;"></div>
-    </div>
+    <!-- Keep #login-choose for JS compatibility (some code may reference it) -->
+    <div id="login-choose" style="display:none"></div>
   </div>
 </div>
 
-<div id="session-expired-banner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:99998;background:#3a2416;border-bottom:1px solid #92400e;color:#fbbf24;padding:9px 14px;font-size:13px;font-weight:600;text-align:center;">
-  ⚠️ เซสชันหมดอายุแล้ว ข้อมูลที่กรอกยังอยู่ — <button onclick="showRecorderLogin(true)" style="background:#fbbf24;color:#1a1206;border:none;border-radius:6px;padding:4px 10px;font-weight:700;cursor:pointer;font-size:12px;margin-left:4px;">เข้าสู่ระบบใหม่</button>
-</div>
-
-<div class="hdr">
-  <div class="hdr-logo">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8Z"/>
-    </svg>
-  </div>
-  <div class="hdr-text">
-    <div class="hdr-title" id="hdr-title">Electric Meter — SR</div>
-    <div class="hdr-sub" id="hdr-small">กำลังโหลด...</div>
-  </div>
-  <div class="hdr-right">
-    <button class="theme-btn" id="theme-btn" onclick="toggleTheme()">🌙</button>
-    <button class="theme-btn" id="logout-btn" onclick="logout()" title="สลับโหมด/ออกจากระบบ">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
-        <path d="m16 17 5-5-5-5"/>
-        <path d="M21 12H9"/>
-      </svg>
+<!-- ── NEW HEADER + SIDEBAR DRAWER ── -->
+<header class="rd-header">
+  <div class="rd-hdr-left">
+    <button class="rd-menu-btn" id="rd-menu-btn" onclick="rdOpenDrawer()" aria-label="Open menu">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
     </button>
-    <div class="sync-dot" id="sync-dot"></div>
+    <div class="rd-brand">
+      <div class="rd-brand-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8Z"/>
+        </svg>
+      </div>
+      <div class="rd-brand-title" id="hdr-title">Electric Meter<span class="rd-brand-code" id="rd-brand-code">SR</span></div>
+    </div>
   </div>
-</div>
+
+  <div class="rd-search">
+    <span class="rd-search-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+    </span>
+    <input type="search" id="rd-search-input" class="rd-search-input" placeholder="Search meters — ID, name, or zone" autocomplete="off">
+    <span class="rd-search-kbd">Enter</span>
+  </div>
+
+  <div class="rd-hdr-right">
+    <button class="rd-icon-btn" id="theme-btn" onclick="toggleTheme()" title="Toggle theme" aria-label="Toggle theme">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+    </button>
+    <div class="rd-status-dot" id="sync-dot" title="Sync status"></div>
+    <span class="rec-badge" id="hdr-badge" style="display:none">0 rec</span>
+    <span id="hdr-small" style="display:none"></span>
+  </div>
+</header>
+
+<!-- Sidebar drawer -->
+<div class="rd-drawer-overlay" id="rd-drawer-overlay" onclick="rdCloseDrawer()"></div>
+<aside class="rd-drawer" id="rd-drawer" aria-label="Main navigation">
+  <div class="rd-drawer-head">
+    <div class="rd-drawer-title">Menu</div>
+    <button class="rd-drawer-close" onclick="rdCloseDrawer()" aria-label="Close menu">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+  </div>
+
+  <div class="rd-drawer-user" id="rd-drawer-user" style="display:none">
+    <div class="rd-drawer-avatar" id="rd-drawer-avatar">U</div>
+    <div class="rd-drawer-usermeta">
+      <div class="rd-drawer-username" id="rd-drawer-username">—</div>
+      <div class="rd-drawer-role" id="rd-drawer-role">—</div>
+    </div>
+  </div>
+
+  <nav class="rd-drawer-nav">
+    <div class="rd-drawer-section">General</div>
+    <a class="rd-drawer-item" href="https://imctconsumption.github.io/" title="Back to hub">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></svg>
+      Home
+    </a>
+
+    <div class="rd-drawer-section">Workspace</div>
+    <button class="rd-drawer-item active" data-rd-tab="entry" onclick="rdGoTab('entry')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+      Entry <span style="margin-left:auto;font-family:var(--rd-font-th);font-size:11px;color:var(--rd-ink-3)">บันทึก</span>
+    </button>
+    <button class="rd-drawer-item rd-admin-item" data-rd-tab="data" onclick="rdGoTab('data')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg>
+      Data <span style="margin-left:auto;font-family:var(--rd-font-th);font-size:11px;color:var(--rd-ink-3)">ข้อมูล</span>
+    </button>
+    <button class="rd-drawer-item rd-admin-item" data-rd-tab="chart" onclick="rdGoTab('chart')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 14 3-4 3 3 4-6"/></svg>
+      Charts <span style="margin-left:auto;font-family:var(--rd-font-th);font-size:11px;color:var(--rd-ink-3)">กราฟ</span>
+    </button>
+    <button class="rd-drawer-item rd-admin-item" data-rd-tab="summary" onclick="rdGoTab('summary')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h8M8 9h2"/></svg>
+      Summary <span style="margin-left:auto;font-family:var(--rd-font-th);font-size:11px;color:var(--rd-ink-3)">สรุป</span>
+    </button>
+    <button class="rd-drawer-item rd-admin-item" data-rd-tab="qr" onclick="rdGoTab('qr')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3M21 14v.01M14 21h.01M17 21h4v-4"/></svg>
+      QR Codes
+    </button>
+    <button class="rd-drawer-item rd-admin-item" data-rd-tab="settings" onclick="rdGoTab('settings')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
+      Settings <span style="margin-left:auto;font-family:var(--rd-font-th);font-size:11px;color:var(--rd-ink-3)">ตั้งค่า</span>
+    </button>
+  </nav>
+
+  <div class="rd-drawer-foot">
+    <button class="rd-drawer-item" id="rd-logout-item" onclick="logout()" style="color:var(--rd-danger);display:none">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg>
+      Sign out
+    </button>
+  </div>
+</aside>
 
 <div class="sync-banner" id="sync-banner">
   <span id="sync-icon">⏳</span>
@@ -3302,6 +3932,163 @@ async function renderCmpChart(){
     sumEl.innerHTML = '<span class="chip chip-green">⚡ รวม '+Math.round(total).toLocaleString()+' kWh</span> ' + cmpAvgChips;
   }catch(e){ el.innerHTML='<div class="warn-box">❌ '+e.message+'</div>'; }
 }
+
+
+
+/* ═══════════════════════════════════════════════════════════
+   REDESIGN SHIM — sidebar drawer + login toggle + search
+   No handler renames; every user action ultimately calls the
+   original functions (goTab, handleLogin, handleRecorderLogin).
+   =========================================================== */
+function rdOpenDrawer(){
+  document.getElementById('rd-drawer')?.classList.add('open');
+  document.getElementById('rd-drawer-overlay')?.classList.add('open');
+  rdSyncDrawerUser();
+  rdSyncDrawerActive();
+  rdApplyRoleVisibility();
+}
+function rdCloseDrawer(){
+  document.getElementById('rd-drawer')?.classList.remove('open');
+  document.getElementById('rd-drawer-overlay')?.classList.remove('open');
+}
+function rdGoTab(name){
+  try { goTab(name); } catch (e) { console.warn('goTab failed', e); }
+  rdCloseDrawer();
+  // update active item
+  document.querySelectorAll('.rd-drawer-item[data-rd-tab]').forEach(el => {
+    el.classList.toggle('active', el.getAttribute('data-rd-tab') === name);
+  });
+}
+function rdSyncDrawerActive(){
+  // read the currently-visible panel to reflect it in the drawer
+  const active = document.querySelector('.panel.active');
+  if (!active) return;
+  const name = active.id.replace(/^panel-/, '');
+  document.querySelectorAll('.rd-drawer-item[data-rd-tab]').forEach(el => {
+    el.classList.toggle('active', el.getAttribute('data-rd-tab') === name);
+  });
+}
+function rdSyncDrawerUser(){
+  // pull from existing globals set by the auth flow
+  const uname = (typeof currentUser !== 'undefined' && currentUser) ? currentUser : '';
+  const mode  = (typeof appMode !== 'undefined') ? appMode : '';
+  const box   = document.getElementById('rd-drawer-user');
+  if (!box) return;
+  if (!uname && !mode) { box.style.display = 'none'; return; }
+  box.style.display = 'flex';
+  const av  = document.getElementById('rd-drawer-avatar');
+  const un  = document.getElementById('rd-drawer-username');
+  const rl  = document.getElementById('rd-drawer-role');
+  if (av) av.textContent = (uname || mode || 'U').substring(0, 1).toUpperCase();
+  if (un) un.textContent = uname || (mode === 'admin' ? 'Administrator' : 'Recorder');
+  if (rl) rl.textContent = mode === 'admin' ? 'Admin access' : 'Recorder';
+  const logout = document.getElementById('rd-logout-item');
+  if (logout) logout.style.display = 'flex';
+}
+function rdApplyRoleVisibility(){
+  // hide admin-only items when in recorder mode
+  const mode = (typeof appMode !== 'undefined') ? appMode : '';
+  document.querySelectorAll('.rd-admin-item').forEach(el => {
+    el.classList.toggle('hidden', mode !== 'admin');
+  });
+}
+// Login toggle handlers
+function rdShowAdmin(){
+  document.getElementById('login-recorder').style.display = 'none';
+  document.getElementById('login-admin').style.display = 'flex';
+  document.getElementById('rd-login-mode-tag').textContent = 'Admin access';
+  document.getElementById('rd-login-title').textContent = 'Administrator sign-in';
+  document.getElementById('rd-login-subtitle').textContent = 'สำหรับผู้ดูแลระบบ / ทีม IT';
+  setTimeout(() => document.getElementById('login-user')?.focus(), 100);
+}
+function rdShowRecorder(){
+  document.getElementById('login-admin').style.display = 'none';
+  document.getElementById('login-recorder').style.display = 'flex';
+  document.getElementById('rd-login-mode-tag').textContent = 'Recorder access';
+  document.getElementById('rd-login-title').textContent = 'Sign in to log readings';
+  document.getElementById('rd-login-subtitle').textContent = 'กรอกรหัสผ่านทีมจดมิเตอร์เพื่อเริ่มบันทึกค่า';
+  setTimeout(() => document.getElementById('login-pass')?.focus(), 100);
+}
+function rdAdminSubmit(){
+  // Bridge the new admin form to the original handleLogin() — which reads #login-user + #login-pass.
+  // We copy from #login-pass-2 → #login-pass so the existing function reads the right value.
+  const p2 = document.getElementById('login-pass-2');
+  const p1 = document.getElementById('login-pass');
+  if (p2 && p1) p1.value = p2.value;
+  try { handleLogin(); } catch (e) { console.warn('handleLogin failed', e); }
+}
+// Keyboard: Enter in recorder passcode → submit
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('login-pass')?.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); handleRecorderLogin(); }
+  });
+  document.getElementById('login-pass-2')?.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); rdAdminSubmit(); }
+  });
+  document.getElementById('login-user')?.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); document.getElementById('login-pass-2')?.focus(); }
+  });
+
+  // ESC closes drawer
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') rdCloseDrawer();
+  });
+
+  // Search: live filter on meter cards + Enter opens first match
+  const search = document.getElementById('rd-search-input');
+  if (search) {
+    search.addEventListener('input', () => rdApplySearch(search.value));
+    search.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); rdOpenFirstMatch(); }
+      if (e.key === 'Escape') { search.value = ''; rdApplySearch(''); }
+    });
+  }
+
+  // Header title from CONFIG if present
+  const title = document.getElementById('hdr-title');
+  const code  = document.getElementById('rd-brand-code');
+  if (title && typeof SITE_NAME !== 'undefined') {
+    // rebuild inner: name + code badge
+    title.innerHTML = SITE_NAME + (typeof SITE_CODE !== 'undefined' ? '<span class="rd-brand-code">' + SITE_CODE + '</span>' : '');
+  }
+});
+function rdApplySearch(q){
+  const query = (q || '').trim().toLowerCase();
+  const cards = document.querySelectorAll('#zone-areas .sub-card');
+  let visible = 0;
+  cards.forEach(card => {
+    if (!query) { card.style.display = ''; visible++; return; }
+    const text = card.textContent.toLowerCase();
+    const show = text.includes(query);
+    card.style.display = show ? '' : 'none';
+    if (show) visible++;
+  });
+  // hide zone sections that have no visible cards
+  document.querySelectorAll('#zone-areas .zone-block').forEach(zone => {
+    const anyVisible = Array.from(zone.querySelectorAll('.sub-card')).some(c => c.style.display !== 'none');
+    zone.style.display = anyVisible ? '' : 'none';
+  });
+}
+function rdOpenFirstMatch(){
+  const first = Array.from(document.querySelectorAll('#zone-areas .sub-card'))
+    .find(c => c.style.display !== 'none');
+  if (first) first.click();
+}
+// Sync sync-dot status class from existing sync logic (poll)
+// The original code sets background-color; we mirror it as class for the new dot.
+setInterval(() => {
+  const dot = document.getElementById('sync-dot');
+  if (!dot) return;
+  const bg = getComputedStyle(dot).backgroundColor;
+  dot.classList.remove('ok','working','err');
+  // heuristic: existing app uses green/orange/red; classify by hue
+  const m = bg.match(/rgb\((\d+),\s*(\d+),\s*(\d+)/);
+  if (!m) return;
+  const [_, r, g, b] = m.map(Number);
+  if (g > r && g > b) dot.classList.add('ok');
+  else if (r > 200 && g > 100 && b < 100) dot.classList.add('working');
+  else if (r > 200 && g < 100) dot.classList.add('err');
+}, 500);
 
 </script>
 </body>
