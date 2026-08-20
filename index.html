@@ -8,12 +8,6 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;700&display=swap" rel="stylesheet">
 <style>
 
-/* ═══════════════════════════════════════════════════════════
-   REDESIGN LAYER — SESSION 1
-   Design tokens matched to the IMCT Consumption hub (navy + cyan + off-white),
-   with dark-mode parity. Component styles for the new header + sidebar drawer +
-   centered login. All original panel/card/button styles below remain untouched.
-   =========================================================== */
 :root {
   --rd-ink:          #0A1628;
   --rd-ink-2:        #3A4A5F;
@@ -1182,7 +1176,7 @@ i svg{ width:1em; height:1em; display:inline-block; vertical-align:-0.12em; }
       <div class="card">
         <div class="card-title"><i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></i>บันทึกค่ามิเตอร์ใหม่</div>
         <div class="f-row">
-          <label class="f-label">📟 ค่าที่อ่านได้ (kWh สะสม)</label>
+          <label class="f-label" id="in-kwh-label">📟 ค่าที่อ่านได้ (kWh สะสม)</label>
           <input class="f-input kwh-input" type="number" id="in-kwh" placeholder="0" step="1" inputmode="decimal" oninput="previewUsed()">
         </div>
         <div id="preview-box" style="display:none;margin-bottom:12px">
@@ -2565,6 +2559,23 @@ let historyLoadFailed = false;   // true when the per-meter history fetch failed
 /* Reflect a failed history load in the entry screen: the save controls are
    disabled and an explicit retry is offered, rather than letting the person
    record a value with no previous reading to validate against. */
+/* The reading label is per-meter, not global: a demand register is read in
+   kW and a tap counter in events, so calling everything "kWh สะสม" mislabels
+   them. Unit text comes from the meter's own `unit` column, so it can be
+   corrected in the sheet without touching code. */
+function applyReadingLabel(){
+  const el = document.getElementById('in-kwh-label');
+  if(!el || !activeSub) return;
+  const unit = String(activeSub.unit || '').trim();
+  const vt = activeValueType();
+  let txt;
+  if(vt === 'demand')       txt = `ค่าที่อ่านได้ (${unit || 'kW'})`;
+  else if(vt === 'counter') txt = `ค่าที่อ่านได้ (${unit || 'ครั้ง'})`;
+  else if(vt === 'snapshot')txt = `ค่าที่อ่านได้ (${unit || 'หน่วยตามมิเตอร์'})`;
+  else                      txt = `ค่าที่อ่านได้ (${unit || UNIT} สะสม)`;
+  el.innerHTML = '📟 ' + esc(txt);
+}
+
 function applyHistoryLoadState(){
   const box = document.getElementById('history-error-box');
   if(box) box.style.display = historyLoadFailed ? 'block' : 'none';
@@ -2626,6 +2637,7 @@ async function selectSub(meterId){
   // Served from the bulk set when available — no network call on meter open.
   if(bulkRecent && Object.prototype.hasOwnProperty.call(bulkRecent, activeSub.id)){
     activeSubRecent = bulkRecent[activeSub.id] || [];
+    applyReadingLabel();
     applyHistoryLoadState(); updateMeterSummary(); renderRecent();
     const sbFast = document.getElementById('save-btn');
     if(sbFast){ sbFast.innerHTML = isConnected ? '✅ บันทึกข้อมูล' : '⚠️ บันทึก (Offline)'; sbFast.disabled = false; }
@@ -2640,6 +2652,7 @@ async function selectSub(meterId){
   }
   sb.innerHTML = isConnected ? '✅ บันทึกข้อมูล' : '⚠️ บันทึก (Offline)';
   sb.disabled  = false;
+  applyReadingLabel();
   applyHistoryLoadState();
   updateMeterSummary(); renderRecent();
 }
@@ -2709,7 +2722,9 @@ function previewUsed(){
     const pk = demandPeakThisMonth();
     if(pk.peak === null){
       chip.className = 'chip chip-green';
-      chip.textContent = `📌 ค่าแรกของเดือนนี้: ${fmtNum(val, activeSub.id)}`;
+      chip.textContent = activeSubRecent.length
+        ? `📌 ค่าแรกของเดือนนี้: ${fmtNum(val, activeSub.id)}`
+        : `📌 ค่าแรกของมิเตอร์นี้: ${fmtNum(val, activeSub.id)}`;
     } else if(val > pk.peak){
       chip.className = 'chip chip-orange';
       chip.textContent = `🔺 พีคใหม่ของเดือน! เดิม ${fmtNum(pk.peak, activeSub.id)} (${fmtDate(pk.peakDate)})`;
