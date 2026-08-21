@@ -2068,12 +2068,24 @@ async function _apiPostNow(body, retries = 2){
   }
 }
 
-async function apiPostAuthed(body){
+/* opts.background — for prefetches the person did not ask for.
+   A background call that comes back with a session error must NOT tear down
+   the session: the prefetch can lose a race with login, or simply arrive
+   while the token is being refreshed, and signing the user out because an
+   optional optimisation failed is far worse than skipping the optimisation.
+   Only work the person actually initiated is allowed to trigger a logout. */
+async function apiPostAuthed(body, opts){
+  const background = !!(opts && opts.background);
   const res = await apiPost(Object.assign({}, body, { token: sessionToken }));
   if(!res || res.success === false){
     const msg = (res && res.error) || 'การดำเนินการล้มเหลว';
+    const isSessionErr = res && /session|เข้าสู่ระบบ/i.test(res.error || '');
+    if(background){
+      console.warn('⚠️ background ' + (body && body.action) + ' failed: ' + msg);
+      throw new Error(msg);
+    }
     toast('❌ ' + msg, 'err');
-    if(res && /session|เข้าสู่ระบบ/i.test(res.error || '')){
+    if(isSessionErr){
       sessionToken = null;
       setTimeout(() => { logout(); }, 1200);
     }
@@ -2118,8 +2130,9 @@ async function loadBulkRecent(){
 }
 
 async function _loadBulkRecentInner(){
+  if(!sessionToken) return null;   // nothing to authenticate with yet
   try{
-    const res = await apiPostAuthed({ action:'getRecentRecordsAll' });
+    const res = await apiPostAuthed({ action:'getRecentRecordsAll' }, { background:true });
     if(res && res.success && res.byMeter) bulkRecent = res.byMeter;
   }catch(e){ console.warn('⚠️ โหลดประวัติรวมไม่ได้ — จะดึงทีละมิเตอร์แทน:', e.message); }
   return bulkRecent;
