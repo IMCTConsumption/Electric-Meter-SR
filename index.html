@@ -2029,9 +2029,23 @@ function perfEnd(name){
 /* Per-action timeout. getRawRecords walks the whole sheet server-side and
    legitimately takes longer than a status ping, so a single flat ceiling
    either cut off the heavy call or made the light ones hang. */
-const SLOW_ACTIONS = { getRawRecords: 45000, getMonthlySummary: 30000, getAvailableMonths: 20000 };
+const SLOW_ACTIONS = { getRawRecords: 45000, getRecentRecordsAll: 45000, getMonthlySummary: 30000, getAvailableMonths: 20000 };
 
-async function apiPost(body, retries = 2){
+/* Apps Script runs one execution at a time per script. Issuing several heavy
+   calls at once therefore does not make them finish sooner — it makes the ones
+   behind the first sit idle until they blow their own timeout, and their
+   single-use /exec redirect target 404s by the time the browser follows it.
+   Everything goes through one chain so each call gets its full budget for its
+   own work rather than spending it queued behind someone else's. */
+let _apiChain = Promise.resolve();
+function apiPost(body, retries = 2){
+  const run = () => _apiPostNow(body, retries);
+  const queued = _apiChain.then(run, run);
+  _apiChain = queued.catch(() => {});   // a failure must not break the chain
+  return queued;
+}
+
+async function _apiPostNow(body, retries = 2){
   const timeoutMs = (body && SLOW_ACTIONS[body.action]) || 12000;
   for(let attempt = 0; attempt <= retries; attempt++){
     const ctrl = new AbortController();
@@ -2094,7 +2108,16 @@ async function loadAvailableMonths(){
    doesn't contain the meter (e.g. a meter added since the last fetch). */
 let bulkRecent = null;          // { meterId: [records newest-first] }
 
+let _bulkRecentInFlight = null;
+
 async function loadBulkRecent(){
+  if(_bulkRecentInFlight) return _bulkRecentInFlight;
+  _bulkRecentInFlight = _loadBulkRecentInner();
+  try { return await _bulkRecentInFlight; }
+  finally { _bulkRecentInFlight = null; }
+}
+
+async function _loadBulkRecentInner(){
   try{
     const res = await apiPostAuthed({ action:'getRecentRecordsAll' });
     if(res && res.success && res.byMeter) bulkRecent = res.byMeter;
@@ -2116,7 +2139,11 @@ async function loadMeterStatus(){
   // Month list is only needed by the admin report pickers — fetch it lazily
   // and never block the entry screen on it.
   if(appMode === 'admin' && !availableMonths) loadAvailableMonths();
-  if(sessionToken) await loadBulkRecent();   // one call replaces one-per-meter later
+  // Deliberately NOT awaited: this is a prefetch that saves a request when a
+  // meter is later opened, not something the entry screen needs in order to
+  // paint. Awaiting it here put a whole-sheet read on the critical path next
+  // to the other heavy calls, which is what pushed them into timeouts.
+  if(sessionToken) loadBulkRecent();
 }
 /* ── Admin record window ──
    The full history is thousands of rows and is the single slowest thing in
@@ -2370,8 +2397,13 @@ function computeUsed(rawRecords){
   rawRecords.forEach(r => { if(r.date && String(r.date).includes('T')) r.date = String(r.date).slice(0, 10); });
   const groups = {};
   rawRecords.forEach(r => { if(!groups[r.meterId]) groups[r.meterId]=[]; groups[r.meterId].push(r); });
+  // Index the meter list once. This used to call subs.find() inside the loop,
+  // which is a linear scan per meter — fine at a handful of meters, but with
+  // ~66 meters over thousands of records it is a lot of pointless comparing.
+  const subMap = {};
+  subs.forEach(s => { subMap[s.id] = s; });
   Object.keys(groups).forEach(meterId => {
-    const sub        = subs.find(s => s.id === meterId);
+    const sub        = subMap[meterId];
     const multiplier = sub?.multiplier !== undefined ? parseFloat(sub.multiplier) : 1;
     const chain = groups[meterId].sort((a,b) => (`${a.date} ${a.time||'00:00'}`).localeCompare(`${b.date} ${b.time||'00:00'}`));
     chain.forEach((rec, i) => {
