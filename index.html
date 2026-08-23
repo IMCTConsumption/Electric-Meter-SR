@@ -3817,9 +3817,14 @@ function renderZoneReport(){
 
   // แคชค่าต่อ (subId, dateStr) ไว้ครั้งเดียว ใช้ทั้งตอนสร้างแถวรายวันและผลรวมท้ายตาราง
   const valGrid = {};
+  const spanGrid = {};   // how many days each figure covers (see meterSpanOnDay)
   zoneSubs.forEach(s => {
     valGrid[s.id] = {};
-    days.forEach(dateStr => { valGrid[s.id][dateStr] = meterUsedOnDay(meterMap, s.id, dateStr, allDates); });
+    spanGrid[s.id] = {};
+    days.forEach(dateStr => {
+      valGrid[s.id][dateStr]  = meterUsedOnDay(meterMap, s.id, dateStr, allDates);
+      spanGrid[s.id][dateStr] = meterSpanOnDay(meterMap, s.id, dateStr, allDates);
+    });
   });
 
   const headCols = zoneSubs.map(s =>
@@ -3832,6 +3837,12 @@ function renderZoneReport(){
     const cells = zoneSubs.map(s => {
       const v = valGrid[s.id][dateStr];
       if(v !== null){ rowTotal += v; rowHas = true; }
+      const span = spanGrid[s.id][dateStr] || 1;
+      if(v !== null && span > 1){
+        // Flag rather than hide: this figure covers `span` days because the
+        // readings in between are missing, so it is not a single day's usage.
+        return `<td style="text-align:right;padding:5px 8px;background:var(--orange-dim);color:var(--orange)" title="รวม ${span} วัน (ขาดค่าที่จดระหว่างทาง)">${fmtCell(v)}<sup>*${span}</sup></td>`;
+      }
       return `<td style="text-align:right;padding:5px 8px">${fmtCell(v)}</td>`;
     }).join('');
     return `<tr>
@@ -3864,7 +3875,7 @@ function renderZoneReport(){
         </tr></tfoot>
       </table>
     </div>
-    <div style="margin-top:6px;font-size:10px;color:var(--text-3)">หน่วย: kWh · — = ไม่มีข้อมูล · ${zoneSubs.length} มิเตอร์ใน Zone นี้</div>`;
+    <div style="margin-top:6px;font-size:10px;color:var(--text-3)">หน่วย: kWh · — = ไม่มีข้อมูล · <span style="color:var(--orange)">ตัวเลขพื้นส้ม *N = รวม N วัน (ขาดค่าที่จดระหว่างทาง)</span> · ${zoneSubs.length} มิเตอร์ใน Zone นี้</div>`;
 }
 
 /* ── exportZoneReportExcel ── */
@@ -4586,17 +4597,55 @@ function getColIds(key){
   const col = reportGroups.find(c => c.key === key);
   return col ? (col.meters || []) : [];
 }
+/* A totalising register that is in service never legitimately reads 0, so a 0
+   here means "nobody wrote anything down", not "nothing was used". Treating it
+   as a real reading is actively destructive: the day before it computes
+   max(0, 0 − R) = 0 and silently loses that day's real consumption, while the
+   day itself computes R(next) − 0 and invents a spike the size of the entire
+   lifetime register. Both the monthly total and any peak analysis would be
+   wrong. Demand meters are excluded from this rule — they genuinely do read 0
+   at the start of a billing cycle, right after the monthly reset. */
+function _isUsableReading(meterId, v){
+  if(v === null || v === undefined || isNaN(v)) return false;
+  const meter = subs.find(s => s.id === meterId);
+  const vt = meterValueType(meter);
+  if(vt === 'demand') return true;          // 0 is a real value at cycle start
+  return Number(v) !== 0;
+}
+
 function meterUsedOnDay(meterMap, meterId, dateStr, allDates){
   const cur = meterMap[meterId]?.[dateStr];
-  if(!cur) return null;
+  if(!cur || !_isUsableReading(meterId, cur.firstKwh)) return null;
   const sub  = subs.find(s => s.id === meterId);
   const mult = sub?.multiplier !== undefined ? parseFloat(sub.multiplier) : 1;
   const idx = allDates.indexOf(dateStr);
   for(let k = idx+1; k < allDates.length; k++){
     const next = meterMap[meterId]?.[allDates[k]];
-    if(next) return Math.max(0, next.firstKwh - cur.firstKwh) * mult;
+    if(next && _isUsableReading(meterId, next.firstKwh)){
+      return Math.max(0, next.firstKwh - cur.firstKwh) * mult;
+    }
   }
   return Math.max(0, cur.lastKwh - cur.firstKwh) * mult;
+}
+
+/* How many calendar days the figure from meterUsedOnDay actually covers.
+   1 = normal. Greater than 1 means readings in between were missing or unusable,
+   so the whole gap has been attributed to this one day. The tables mark those
+   cells rather than quietly showing an inflated number as if it were a
+   single day's use. */
+function meterSpanOnDay(meterMap, meterId, dateStr, allDates){
+  const cur = meterMap[meterId]?.[dateStr];
+  if(!cur || !_isUsableReading(meterId, cur.firstKwh)) return 0;
+  const idx = allDates.indexOf(dateStr);
+  for(let k = idx+1; k < allDates.length; k++){
+    const next = meterMap[meterId]?.[allDates[k]];
+    if(next && _isUsableReading(meterId, next.firstKwh)){
+      const d1 = new Date(dateStr + 'T00:00:00');
+      const d2 = new Date(allDates[k] + 'T00:00:00');
+      return Math.max(1, Math.round((d2 - d1) / 86400000));
+    }
+  }
+  return 1;
 }
 
 var cmpState = { period:'day', type:'bar', showAvg:true };
