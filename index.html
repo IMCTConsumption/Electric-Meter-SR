@@ -1458,7 +1458,7 @@ i svg{ width:1em; height:1em; display:inline-block; vertical-align:-0.12em; }
       <div class="f-2col">
         <div class="f-row">
           <label class="f-label">📅 เดือน</label>
-          <select class="f-input" id="cost-month" onchange="loadCostData()"></select>
+          <select class="f-input" id="cost-month" onchange="renderTariffForms(); loadCostData();"></select>
         </div>
         <div class="f-row" style="display:flex;align-items:flex-end">
           <button class="btn btn-primary btn-full" onclick="loadCostData()" style="min-height:44px">🔄 คำนวณ</button>
@@ -1723,6 +1723,16 @@ function fmtTime(t){
   }
   return String(t).slice(0,5) || '—';
 }
+/* Renders the "used" column. null means the figure does not exist for this
+   kind of meter — a demand register's readings are kW peaks and a snapshot is
+   an instantaneous value, so there is no consumption to show. `r.used || 0`
+   collapsed that null into a confident-looking 0, which reads as "used nothing
+   today" rather than "this column does not apply here". */
+function fmtUsedCell(used, meterId){
+  if(used === null || used === undefined) return '<span style="color:var(--rd-ink-3)">—</span>';
+  return fmtNum(used, meterId);
+}
+
 function fmtNum(val, meterId){
   const sub = subs.find(s => s.id === meterId);
   const dec = sub && sub.decimal !== undefined ? sub.decimal : 0;
@@ -2540,7 +2550,7 @@ function goTab(name){
   if(name === 'qr')       { renderQR(); }
   if(name === 'settings') { renderSubList(); renderCalendarList(); }
   if(name === 'summary')  { buildMonthOptions(); populateZoneReportSelect(); loadReport(); loadZoneReport(); }
-  if(name === 'cost')     { buildCostMonthOptions(); renderTariffForms(); loadCostData(); }
+  if(name === 'cost')     { buildCostMonthOptions(); loadTariffs().then(() => { renderTariffForms(); loadCostData(); }); }
 }
 
 /* ════════════ WORK CALENDAR ════════════ */
@@ -2633,7 +2643,7 @@ function renderTable(){
   tbody.innerHTML = pageItems.map(r => `<tr>
     <td class="td-sub">${r.meterId}</td><td>${fmtDate(r.date)}</td><td>${fmtTime(r.time)}</td>
     <td class="td-kwh">${fmtNum(r.kwh, r.meterId)}</td>
-    <td class="td-used"><strong>${fmtNum(r.used||0, r.meterId)}</strong></td>
+    <td class="td-used"><strong>${fmtUsedCell(r.used, r.meterId)}</strong></td>
     <td class="desktop-only">${esc(r.user)||'—'}</td><td class="desktop-only">${esc(r.note)||'—'}</td>
     <td><div class="td-act">
       <button class="btn btn-primary btn-sm" onclick="openEdit('${r.id}')">✏️</button>
@@ -2811,7 +2821,15 @@ function updateMeterSummary(){
   const prev = activeSubRecent.length > 1 ? activeSubRecent[1] : null;
   document.getElementById('last-reading').textContent = fmtNum(last.kwh, activeSub.id);
   document.getElementById('prev-reading').textContent = prev ? fmtNum(prev.kwh, activeSub.id) : '—';
-  document.getElementById('last-used').textContent    = prev ? fmtNum(prev.used||0, activeSub.id) : '—';
+  // For a demand or snapshot meter there is no "used since last time" to show.
+  const _lu = document.getElementById('last-used');
+  const _vt = activeValueType();
+  if(_vt === 'demand' || _vt === 'snapshot'){
+    _lu.textContent = '—';
+  } else {
+    _lu.textContent = (prev && prev.used !== null && prev.used !== undefined)
+      ? fmtNum(prev.used, activeSub.id) : '—';
+  }
 }
 /* ── Meter value types ──
    Mirrors VALUE_TYPES in Code.gs. A blank/unknown value means 'cumulative',
@@ -2907,7 +2925,7 @@ function renderRecent(){
   body.innerHTML = recs.map(r => `<tr>
     <td>${fmtDate(r.date)}</td><td>${fmtTime(r.time)}</td>
     <td class="td-kwh">${fmtNum(r.kwh, activeSub.id)}</td>
-    <td class="td-used">${fmtNum(r.used||0, activeSub.id)}</td>
+    <td class="td-used">${fmtUsedCell(r.used, activeSub.id)}</td>
     <td>${esc(r.user)||'—'}</td>
     <td>${canEdit ? `<button class="btn btn-ghost btn-sm" onclick="openEdit('${r.id}')">✏️</button>` : ''}</td>
   </tr>`).join('');
@@ -3015,9 +3033,12 @@ async function doSaveRecord(sub, kwh, date, time, user, note){
   }finally{ btn.disabled = false; btn.innerHTML = '✅ บันทึกข้อมูล'; }
 }
 function getRecentAvgUsed(meterId){
-  const chain = activeSubRecent.filter(r => (r.used||0) > 0);
+  // Only real consumption figures feed the "abnormally high" check. Entries
+  // with a null `used` (demand/snapshot) are excluded explicitly rather than
+  // relying on null||0 falling below the > 0 test.
+  const chain = activeSubRecent.filter(r => r.used !== null && r.used !== undefined && r.used > 0);
   if(!chain.length) return 0;
-  return chain.reduce((a,r) => a + (r.used||0), 0) / chain.length;
+  return chain.reduce((a,r) => a + r.used, 0) / chain.length;
 }
 async function markUnableToRecord(){
   if(!activeSub) return toast('เลือก Meter ก่อน','err');
@@ -3340,7 +3361,7 @@ async function exportExcel(){
   const ws = XLSX.utils.json_to_sheet(dataToExport.map(r => ({
     'ID': r.id, 'Meter ID': r.meterId, 'คำอธิบาย': r.meterName, 'หมวด': r.zone,
     'Date': fmtDate(r.date), 'Time': fmtTime(r.time),
-    'kWh (Cumulative)': fmtNum(r.kwh, r.meterId), 'Used (kWh)': fmtNum(r.used, r.meterId),
+    'kWh (Cumulative)': fmtNum(r.kwh, r.meterId), 'Used (kWh)': (r.used === null || r.used === undefined) ? '' : fmtNum(r.used, r.meterId),
     'User': r.user, 'Note': r.note, 'Edited By': r.editedBy||'', 'Timestamp': r.ts
   })));
   ws['!cols'] = Array(12).fill({ wch:18 });
@@ -4118,12 +4139,38 @@ const TARIFF_FIELDS = [
   { k:'service', label:'ค่าบริการรายเดือน',        unit:'บาท'     }
 ];
 
-function tariffKey(supplyKey){ return 'tariff:' + supplyKey; }
+/* Rates live in the _TARIFFS sheet, keyed by month + supply point.
+   They used to sit in localStorage, which meant each admin's browser held its
+   own copy and — the real problem — only one set of rates existed, so costing
+   an earlier month applied the current Ft to it. */
+let tariffRows = null;      // [{month, supply, rateOn, ...}] newest month first
 
+async function loadTariffs(){
+  try{
+    const res = await apiPostAuthed({ action:'getTariffs' });
+    if(res && res.success && Array.isArray(res.tariffs)) tariffRows = res.tariffs;
+  }catch(e){ console.warn('⚠️ โหลดอัตราค่าไฟไม่ได้:', e.message); }
+  return tariffRows;
+}
+
+/* Rates in force for a month. Exact match wins; otherwise the most recent
+   earlier month is carried forward (typically only Ft differs) and the month
+   actually used is reported back so the UI can be explicit about it. */
+function getTariffFor(supplyKey, month){
+  if(!tariffRows || !tariffRows.length) return { rates:{}, from:null, exact:false };
+  const exact = tariffRows.find(t => t.supply === supplyKey && t.month === month);
+  if(exact) return { rates: exact, from: month, exact: true };
+  const earlier = tariffRows
+    .filter(t => t.supply === supplyKey && t.month < month)
+    .sort((a,b) => b.month.localeCompare(a.month))[0];
+  if(earlier) return { rates: earlier, from: earlier.month, exact: false };
+  return { rates:{}, from:null, exact:false };
+}
+
+// Rates currently shown in the form for a supply (used by renderTariffForms).
 function getTariff(supplyKey){
-  const raw = lsGetRaw(tariffKey(supplyKey));
-  if(!raw) return {};
-  try { return JSON.parse(raw) || {}; } catch(e){ return {}; }
+  const month = document.getElementById('cost-month')?.value || '';
+  return getTariffFor(supplyKey, month).rates || {};
 }
 
 function renderTariffForms(){
@@ -4144,28 +4191,48 @@ function renderTariffForms(){
   }).join('');
 }
 
-function saveTariffs(){
-  COST_SUPPLIES.forEach(sp => {
-    const t = {};
-    TARIFF_FIELDS.forEach(f => {
-      const el = document.getElementById('tf-' + sp.key + '-' + f.k);
-      if(el && el.value !== '') t[f.k] = parseFloat(el.value);
-    });
-    lsSetRaw(tariffKey(sp.key), JSON.stringify(t));
-  });
-  toast('💾 บันทึกอัตราแล้ว','ok');
-  loadCostData();
+async function saveTariffs(){
+  const month = document.getElementById('cost-month')?.value;
+  if(!month) return toast('เลือกเดือนก่อน','err');
+  setSyncStatus('busy','กำลังบันทึกอัตรา...');
+  try{
+    // One row per supply point, written for the month currently selected.
+    for(const sp of COST_SUPPLIES){
+      const t = { month: month, supply: sp.key };
+      TARIFF_FIELDS.forEach(f => {
+        const el = document.getElementById('tf-' + sp.key + '-' + f.k);
+        t[f.k === 'rateDem' ? 'rateDemand' : f.k] = (el && el.value !== '') ? parseFloat(el.value) : '';
+      });
+      await apiPostAuthed({ action:'saveTariff', tariff: t });
+    }
+    invalidateTariffsCacheLocal();
+    await loadTariffs();
+    setSyncStatus('ok','บันทึกอัตราแล้ว');
+    toast('💾 บันทึกอัตราของเดือน ' + month + ' แล้ว','ok');
+    renderTariffForms();
+    loadCostData();
+  }catch(e){
+    setSyncStatus('error','บันทึกอัตราไม่สำเร็จ');
+  }
 }
+
+function invalidateTariffsCacheLocal(){ tariffRows = null; }
 
 function buildCostMonthOptions(){
   const sel = document.getElementById('cost-month');
   if(!sel) return;
   const MN = ['','ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
-  let months = (availableMonths && availableMonths.length) ? availableMonths.slice() : [];
-  if(!months.length){
-    const n = new Date();
-    months = [n.getFullYear() + '-' + String(n.getMonth()+1).padStart(2,'0')];
+  // Months that hold readings, plus the current month and the next two: Ft and
+  // the rate schedule are often published before the month is billed, so the
+  // rates need somewhere to be entered ahead of any readings existing.
+  const set = {};
+  (availableMonths || []).forEach(m => { set[m] = true; });
+  const now = new Date();
+  for(let i = 0; i <= 2; i++){
+    const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+    set[d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0')] = true;
   }
+  const months = Object.keys(set).sort().reverse();
   const prev = sel.value;
   sel.innerHTML = months.map(m => {
     const p = m.split('-');
@@ -4240,14 +4307,15 @@ function renderCost(month){
   let grandPre = 0, anyRate = false, html = '';
 
   COST_SUPPLIES.forEach(sp => {
-    const t = getTariff(sp.key);
+    const lookup = getTariffFor(sp.key, month);
+    const t = lookup.rates || {};
     const on  = costEnergy(sp.onpk, month);
     const off = costEnergy(sp.offpk, month);
     const dem = costDemand(sp.demOn, month);
 
     const rOn  = parseFloat(t.rateOn)  || 0;
     const rOff = parseFloat(t.rateOff) || 0;
-    const rDem = parseFloat(t.rateDem) || 0;
+    const rDem = parseFloat(t.rateDemand !== undefined ? t.rateDemand : t.rateDem) || 0;
     const ft   = parseFloat(t.ft)      || 0;
     const svc  = parseFloat(t.service) || 0;
     if(rOn || rOff || rDem || ft || svc) anyRate = true;
@@ -4271,6 +4339,9 @@ function renderCost(month){
     html += '<div class="card">' +
       '<div class="card-title">⚡ ' + esc(sp.label) + '</div>' +
       (missing.length ? '<div class="warn-box">⚠️ ไม่มีข้อมูลเดือนนี้: ' + missing.join(' · ') + ' — ส่วนที่ขาดนับเป็น 0</div>' : '') +
+      (lookup.from && !lookup.exact
+        ? '<div class="warn-box">↩️ ยังไม่ได้กรอกอัตราของเดือนนี้ — ใช้อัตราของเดือน ' + lookup.from + ' แทน</div>'
+        : '') +
       '<div class="tbl-wrap"><table>' +
       '<thead><tr><th>รายการ</th><th style="text-align:right">ปริมาณ</th><th style="text-align:right">อัตรา</th><th style="text-align:right">เป็นเงิน (บาท)</th></tr></thead><tbody>' +
       '<tr><td>ค่าพลังงาน On Peak</td><td style="text-align:right;font-family:var(--rd-font-mono)">' + (on===null?'—':_units(onKwh)+' kWh') + '</td><td style="text-align:right;font-family:var(--rd-font-mono)">' + (rOn||'—') + '</td><td style="text-align:right;font-family:var(--rd-font-mono)">' + _money(cOn) + '</td></tr>' +
