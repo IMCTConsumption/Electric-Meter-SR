@@ -1143,6 +1143,7 @@ i svg{ width:1em; height:1em; display:inline-block; vertical-align:-0.12em; }
           </span>
           <input type="search" id="rd-search-input" class="rd-search-input" placeholder="ค้นหามิเตอร์ — รหัส, ชื่อ, หรือโซน" autocomplete="off">
         </div>
+        <div class="info-box" id="queue-banner" style="display:none;margin-bottom:10px"></div>
         <div id="logging-day-note" style="display:none;font-family:var(--rd-font-mono);font-size:11px;color:var(--rd-ink-3);margin-bottom:10px"></div>
         <div id="zone-areas"></div>
         <div class="btn-row" style="margin-top:12px">
@@ -1517,7 +1518,8 @@ i svg{ width:1em; height:1em; display:inline-block; vertical-align:-0.12em; }
         <button class="btn btn-yellow btn-sm" onclick="exportExcel()">📥 Excel</button>
         <button class="btn btn-ghost btn-sm" onclick="exportJSON()">💾 JSON</button>
         <button class="btn btn-ghost btn-sm" onclick="document.getElementById('import-inp').click()">📂 Import</button>
-        <button class="btn btn-danger btn-sm" onclick="clearCache()">🗑 ล้าง Cache</button>
+        <button class="btn btn-yellow btn-sm" onclick="clearServerCache()" title="ใช้หลังแก้ชีทโดยตรง — ให้เซิร์ฟเวอร์อ่านข้อมูลใหม่">🔄 ล้าง Cache เซิร์ฟเวอร์</button>
+        <button class="btn btn-danger btn-sm" onclick="clearCache()">🗑 ล้าง Cache เครื่องนี้</button>
       </div>
       <input type="file" id="import-inp" accept=".json" style="display:none" onchange="doImport(event)">
     </div>
@@ -1860,6 +1862,7 @@ function logout(){
   records = [];
   applyAppMode('basic');           // reset role, and with it the sidebar contents
   _adminRecordsInFlight = null;    // drop any in-flight admin pull from the old session
+  _adminRecordsLoaded = false;
   bulkRecent = null;               // stale once the session ends
   historyLoadFailed = false;
   activeSub = null;
@@ -1958,7 +1961,7 @@ async function handleLogin(){
       lsRemove('loginMode');
       closeLoginGate();
       loginBtn.innerHTML = '⏳ กำลังโหลดข้อมูล...';
-      await loadAdminRecords();
+      // records are fetched lazily — see ensureAdminRecords()
       renderAll();
     } else if(res && res.success){
       errDiv.style.display = 'block'; errDiv.innerText = '⚠️ บัญชีนี้ไม่มีสิทธิ์แอดมิน'; shakeInputs();
@@ -2058,7 +2061,17 @@ function perfEnd(name){
 /* Per-action timeout. getRawRecords walks the whole sheet server-side and
    legitimately takes longer than a status ping, so a single flat ceiling
    either cut off the heavy call or made the light ones hang. */
-const SLOW_ACTIONS = { getRawRecords: 45000, getRecentRecordsAll: 45000, getMonthlySummary: 30000, getAvailableMonths: 20000 };
+/* Per-action ceilings. getMeterStatus was on the 12s default while doing a
+   full-sheet scan behind the scenes, so it timed out and retried — paying for
+   the same slow work twice before succeeding. */
+const SLOW_ACTIONS = {
+  getRawRecords:       45000,
+  getRecentRecordsAll: 45000,
+  getMeterStatus:      30000,
+  getMonthlySummary:   30000,
+  getAvailableMonths:  20000,
+  flushCaches:         30000
+};
 
 /* Apps Script runs one execution at a time per script. Issuing several heavy
    calls at once therefore does not make them finish sooner — it makes the ones
@@ -2192,6 +2205,7 @@ async function loadMeterStatus(){
   // paint. Awaiting it here put a whole-sheet read on the critical path next
   // to the other heavy calls, which is what pushed them into timeouts.
   if(sessionToken) loadBulkRecent();
+  loadQueue(); startQueueTimer(); flushQueue();
 }
 /* ── Admin record window ──
    The full history is thousands of rows and is the single slowest thing in
@@ -2216,6 +2230,33 @@ function _windowStartDate(days){
    Apps Script two simultaneous full-sheet reads block each other long enough
    for both to hit the client timeout. Callers now share one in-flight promise. */
 let _adminRecordsInFlight = null;
+
+/* The raw record set is only needed by two tabs: Data (the table, and editing
+   or deleting a row) and Charts (the per-meter series). Summary and Cost read
+   server-side aggregates and never touch it.
+
+   It used to be fetched during login, so everyone who signed in waited for
+   thousands of rows before seeing anything — and since report viewers all have
+   admin accounts, every one of them paid that cost for data they never opened.
+   With a 45s timeout and two retries a slow fetch could stall the app for over
+   two minutes. It is now pulled the first time a tab that needs it is opened. */
+let _adminRecordsLoaded = false;
+
+async function ensureAdminRecords(){
+  if(_adminRecordsLoaded || appMode !== 'admin' || !sessionToken) return;
+  setSyncStatus('busy','กำลังโหลดข้อมูล...');
+  try{
+    await loadAdminRecords();
+    _adminRecordsLoaded = true;
+    setSyncStatus('ok','โหลดข้อมูลแล้ว');
+    renderData(); updateRecordWindowNotice(); updateBadge();
+    if(document.querySelector('.panel.active')?.id === 'panel-chart'){
+      populateDDs(); initG9Pickers(); renderSubChart();
+    }
+  }catch(e){
+    setSyncStatus('error','โหลดข้อมูลไม่สำเร็จ');
+  }
+}
 
 async function loadAdminRecords(opts){
   if(_adminRecordsInFlight) return _adminRecordsInFlight;
@@ -2394,7 +2435,7 @@ function loadFromServer(){
       if(data.calendar     && Array.isArray(data.calendar))     workCalendar = data.calendar;
       persist(); isConnected = true; invalidateSummaryCache('loadFromServer');
       await loadMeterStatus();
-      if(appMode === 'admin' && sessionToken) await loadAdminRecords();
+      // records are fetched lazily by the tabs that need them (see ensureAdminRecords)
       renderAll();
       if(activeSub){
         const sb = document.getElementById('save-btn');
@@ -2429,7 +2470,7 @@ function refreshData(){
       if(data.calendar     && Array.isArray(data.calendar))     workCalendar = data.calendar;
       persist(); isConnected = true; invalidateSummaryCache('refreshData');
       await loadMeterStatus();
-      if(appMode === 'admin' && sessionToken) await loadAdminRecords();
+      // records are fetched lazily by the tabs that need them (see ensureAdminRecords)
       renderAll();
       setSyncStatus('ok',`โหลดสำเร็จ — ${subs.length} Meter`);
     })
@@ -2554,8 +2595,8 @@ function goTab(name){
   const idx   = TAB_ORDER.indexOf(name);
   const tabEl = document.querySelectorAll('.tab')[idx];
   if(tabEl) tabEl.classList.add('active');
-  if(name === 'data')     { renderData(); renderStats(); updateRecordWindowNotice(); }
-  if(name === 'chart')    { populateDDs(); setSubQuick('30d'); buildCompareGroupOptions(); initG9Pickers(); renderG9Chart(); }
+  if(name === 'data')     { ensureAdminRecords(); renderData(); renderStats(); updateRecordWindowNotice(); }
+  if(name === 'chart')    { ensureAdminRecords(); populateDDs(); setSubQuick('30d'); buildCompareGroupOptions(); initG9Pickers(); renderG9Chart(); }
   if(name === 'qr')       { renderQR(); }
   if(name === 'settings') { renderSubList(); renderCalendarList(); }
   if(name === 'summary')  { onTabSummary(); }
@@ -2995,60 +3036,31 @@ async function saveRecord(){
 async function doSaveRecord(sub, kwh, date, time, user, note){
   const now = new Date();
   const rec = { id: `REC-${now.getTime()}-${Math.floor(Math.random()*1000)}`, meterId: sub.id, meterName: sub.name, zone: sub.zone, date, time, kwh, user, note, ts: now.toISOString(), editedTs: '', editedBy: '' };
-  // Remember the pre-save state so a failed write can be rolled back cleanly.
-  // NOTE: nothing is queued locally for a recorder — if the POST fails the
-  // reading is genuinely gone, so we must NOT clear the form or claim success
-  // until the server has confirmed. (The old code did both up-front and told
-  // the user "saved on device", which was untrue for recorders and could let
-  // a lost reading pass unnoticed.)
-  const prevStatus      = meterStatus[sub.id];
-  const prevStatusToday = meterStatusToday[sub.id];
+
+  /* Durable first, then instant. The reading goes into the send queue — which
+     writes to localStorage — before anything is cleared, so it survives a
+     failed upload, a closed tab, or a dead battery. Only then does the form
+     reset, which is what lets the recorder move to the next meter immediately
+     instead of waiting ten seconds for a round trip, 200 times a round. */
+  enqueueRecord(rec);
+
   if(appMode === 'admin' && records.length){ records.push(rec); records = computeUsed(records); persist(); }
   meterStatus[sub.id] = true;
-  meterStatusToday[sub.id] = true;   // this is what drives the green/red card
-  renderZoneAreas(); updateBadge();
+  meterStatusToday[sub.id] = true;
+  if(bulkRecent && bulkRecent[sub.id]){
+    bulkRecent[sub.id] = [rec].concat(bulkRecent[sub.id]).slice(0, 5);
+  }
+  activeSubRecent = [rec].concat(activeSubRecent || []).slice(0, 5);
+
+  document.getElementById('in-kwh').value  = '';
+  document.getElementById('in-note').value = '';
+  document.getElementById('preview-box').style.display = 'none';
+  setNow();
+  renderZoneAreas(); updateBadge(); updateMeterSummary(); renderRecent();
+  toast('✅ บันทึกแล้ว','ok');
+
   const btn = document.getElementById('save-btn');
-  btn.disabled = true; btn.textContent = '⏳ กำลังบันทึก...';
-  setSyncStatus('busy','กำลังบันทึกลง Google Sheets...');
-  try{
-    const payload = { id:rec.id, meterId:rec.meterId, meterName:rec.meterName, zone:rec.zone, date:rec.date, time:rec.time, kwh:rec.kwh, user:rec.user, note:rec.note, ts:rec.ts, editedTs:'', editedBy:'' };
-    const res = await apiPost({ action:'saveRecord', record:payload, token: sessionToken });
-    if(!res || res.success === false) throw new Error((res && res.error) || 'บันทึกไม่สำเร็จ');
-    invalidateSummaryCache('saveRecord:'+rec.meterId+'@'+rec.date);
-    // Confirmed by the server — only now is it safe to clear the form.
-    toast('✅ บันทึกแล้ว','ok');
-    document.getElementById('in-kwh').value  = '';
-    document.getElementById('in-note').value = '';
-    document.getElementById('preview-box').style.display = 'none';
-    setNow();
-    setSyncStatus('ok','บันทึกลง Sheets แล้ว');
-    if(activeSub && activeSub.id === sub.id){
-      try{
-        activeSubRecent = await loadRecentForSub(sub.id, 5);
-        if(bulkRecent) bulkRecent[sub.id] = activeSubRecent;   // keep the bulk set in step
-      }catch(e){}
-      updateMeterSummary(); renderRecent();
-    }
-  }catch(e){
-    // Roll back the optimistic state: the card goes back to red and the value
-    // the person typed stays in the box so they can just press save again.
-    meterStatus[sub.id]      = prevStatus;
-    meterStatusToday[sub.id] = prevStatusToday;
-    if(appMode === 'admin' && records.length){
-      records = records.filter(r => r.id !== rec.id);
-      records = computeUsed(records); persist();
-    }
-    renderZoneAreas(); updateBadge();
-    const isAuthFailure = /เซสชัน|เข้าสู่ระบบ/.test(e.message || '');
-    if(isAuthFailure){
-      setSyncStatus('error','เซสชันหมดอายุ — ยังไม่ได้บันทึก');
-      toast('❌ เซสชันหมดอายุ ยังไม่ได้บันทึก — เข้าสู่ระบบใหม่แล้วกดบันทึกอีกครั้ง','err');
-      showSessionExpiredBanner();
-    } else {
-      setSyncStatus('error','บันทึกไม่สำเร็จ');
-      toast('❌ บันทึกไม่สำเร็จ กรุณาลองใหม่ (ค่าที่กรอกยังอยู่)','err');
-    }
-  }finally{ btn.disabled = false; btn.innerHTML = '✅ บันทึกข้อมูล'; }
+  if(btn){ btn.disabled = false; btn.innerHTML = '✅ บันทึกข้อมูล'; }
 }
 function getRecentAvgUsed(meterId){
   // Only real consumption figures feed the "abnormally high" check. Entries
@@ -3406,6 +3418,23 @@ function doImport(e){
   };
   r.readAsText(file); e.target.value = '';
 }
+/* Clears the server-side caches too. Editing _METERS or _REPORT_GROUPS in the
+   sheet does not go through the app, so nothing invalidates those caches —
+   without this the edit stays invisible for up to 12 hours. */
+async function clearServerCache(){
+  if(!confirm('ล้าง Cache บนเซิร์ฟเวอร์?\n\nใช้หลังแก้ชีท _METERS หรือ _REPORT_GROUPS โดยตรง\n(ข้อมูลใน Sheets ยังอยู่ครบ)')) return;
+  setSyncStatus('busy','กำลังล้าง cache เซิร์ฟเวอร์...');
+  try{
+    const res = await apiPostAuthed({ action:'flushCaches' });
+    toast('🗑 ล้าง cache แล้ว: ' + (res.cleared || []).join(', '),'ok');
+    setSyncStatus('ok','ล้าง cache แล้ว — กำลังโหลดใหม่');
+    _adminRecordsLoaded = false; bulkRecent = null; availableMonths = null;
+    await loadFromServer();
+  }catch(e){
+    setSyncStatus('error','ล้าง cache ไม่สำเร็จ');
+  }
+}
+
 function clearCache(){
   if(!confirm('ล้าง Cache ในเครื่องนี้?\n(ข้อมูลใน Google Sheets ยังอยู่ครบ)')) return;
   records = []; subs = []; workCalendar = []; filteredRecords = []; currentPage = 1;
@@ -3435,6 +3464,129 @@ init();
 
 
 
+
+
+/* ════════════════════════════════════════════════════════════
+   SEND QUEUE
+
+   A recorder walks 200-odd meters. Waiting for the server to confirm each
+   save turned a ten-second round trip into forty minutes of standing at
+   cabinets, so the save now completes locally and the upload happens behind
+   them while they move on.
+
+   The earlier version got this wrong in the other direction: it cleared the
+   form the moment the button was pressed and said "saved", so a failed upload
+   lost the reading with nobody the wiser. The queue is what makes both true at
+   once — instant for the person, and durable, because a reading is written to
+   localStorage before the form clears and stays there until the server has
+   acknowledged it.
+
+   Duplicate protection is server-side: addRecord() rejects an id it has
+   already stored, so re-sending after an ambiguous failure can never create a
+   second row. That is what makes retrying safe to do automatically.
+   ════════════════════════════════════════════════════════════ */
+const QUEUE_KEY          = 'sendQueue';
+const QUEUE_RETRY_MS     = 30000;   // background sweep interval
+const QUEUE_MAX_ATTEMPTS = 5;       // after this it waits for a manual push
+
+let sendQueue = [];
+let _queueTimer = null;
+let _queueRunning = false;
+
+function loadQueue(){
+  try {
+    const raw = lsGetRaw(QUEUE_KEY);
+    sendQueue = raw ? (JSON.parse(raw) || []) : [];
+  } catch(e){ sendQueue = []; }
+  return sendQueue;
+}
+function persistQueue(){
+  try { lsSetRaw(QUEUE_KEY, JSON.stringify(sendQueue)); } catch(e){ /* storage full — the in-memory copy still works this session */ }
+  renderQueueBanner();
+}
+
+function enqueueRecord(rec){
+  sendQueue.push({ rec: rec, attempts: 0, lastError: '', queuedAt: Date.now() });
+  persistQueue();
+  flushQueue();               // fire and forget
+}
+
+/* Try to send everything waiting. Serialised: the API queue upstream already
+   funnels calls one at a time, and sending in order keeps a meter's readings
+   in the order they were taken. */
+async function flushQueue(manual){
+  if(_queueRunning) return;
+  if(!sendQueue.length) return;
+  if(!sessionToken){ renderQueueBanner(); return; }
+  _queueRunning = true;
+  try{
+    while(sendQueue.length){
+      const item = sendQueue[0];
+      if(!manual && item.attempts >= QUEUE_MAX_ATTEMPTS) break;   // parked; wait for a manual push
+      try{
+        const r = item.rec;
+        const payload = { id:r.id, meterId:r.meterId, meterName:r.meterName, zone:r.zone,
+                          date:r.date, time:r.time, kwh:r.kwh, user:r.user, note:r.note,
+                          ts:r.ts, editedTs:'', editedBy:'' };
+        const res = await apiPost({ action:'saveRecord', record:payload, token: sessionToken });
+        if(!res || res.success === false) throw new Error((res && res.error) || 'บันทึกไม่สำเร็จ');
+        sendQueue.shift();
+        persistQueue();
+        invalidateSummaryCache('saveRecord:'+r.meterId+'@'+r.date);
+      }catch(e){
+        item.attempts++;
+        item.lastError = e.message || 'error';
+        persistQueue();
+        break;                 // stop the sweep; the timer will come back
+      }
+    }
+  } finally {
+    _queueRunning = false;
+    renderQueueBanner();
+  }
+}
+
+function startQueueTimer(){
+  if(_queueTimer) return;
+  _queueTimer = setInterval(() => { if(sendQueue.length) flushQueue(); }, QUEUE_RETRY_MS);
+}
+
+function renderQueueBanner(){
+  const el = document.getElementById('queue-banner');
+  if(!el) return;
+  if(!sendQueue.length){ el.style.display = 'none'; return; }
+  const stuck = sendQueue.filter(q => q.attempts >= QUEUE_MAX_ATTEMPTS).length;
+  el.style.display = 'block';
+  el.className = stuck ? 'warn-box' : 'info-box';
+  const err = stuck ? ` · ล่าสุด: ${esc(sendQueue[0].lastError || '')}` : '';
+  el.innerHTML =
+    (stuck ? '⚠️ ' : '⏳ ') +
+    `<strong>รอส่ง ${sendQueue.length} รายการ</strong>` +
+    (stuck ? ' — ส่งไม่สำเร็จ' + err : ' — กำลังส่งเบื้องหลัง') +
+    ` <button class="btn btn-yellow btn-sm" style="margin-left:8px" onclick="flushQueue(true)">📤 ส่งเดี๋ยวนี้</button>` +
+    ` <button class="btn btn-ghost btn-sm" onclick="showQueueDetail()">ดูรายการ</button>`;
+}
+
+function showQueueDetail(){
+  if(!sendQueue.length) return toast('ไม่มีรายการค้าง','ok');
+  const lines = sendQueue.slice(0, 20).map((q, i) =>
+    `${i+1}. ${q.rec.meterId} — ${q.rec.kwh} (${q.rec.date} ${q.rec.time})` +
+    (q.attempts ? `  [ลองแล้ว ${q.attempts} ครั้ง]` : '')
+  );
+  alert('รายการที่รอส่ง\n\n' + lines.join('\n') +
+        (sendQueue.length > 20 ? `\n\n...และอีก ${sendQueue.length - 20} รายการ` : ''));
+}
+
+/* Closing the tab with unsent readings loses them. The browser only allows a
+   generic prompt here, but that is enough to stop someone walking away from a
+   round that has not finished uploading. */
+window.addEventListener('beforeunload', function(e){
+  if(sendQueue.length){
+    e.preventDefault();
+    e.returnValue = '';
+    return '';
+  }
+});
 
 /* ════════════════════════════════════════════════════════════
    MONTHLY REPORT — ExcelJS export helpers (Electric-specific)
