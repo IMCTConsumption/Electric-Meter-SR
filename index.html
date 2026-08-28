@@ -925,6 +925,30 @@ i svg{ width:1em; height:1em; display:inline-block; vertical-align:-0.12em; }
 .apexcharts-menu-item:hover{background:var(--surface-3)!important}
 .f-input::placeholder{ font-size:12px; color:var(--text-3); opacity:.8; }
 .f-input.kwh-input::placeholder{ font-size:14px; letter-spacing:0; }
+
+/* Card now leads with the meter name; the id lived here before and is gone.
+   Sized up because this is the one thing a recorder reads at arm's length in
+   a plant room. */
+#zone-areas .sc-name-main {
+  font-family: var(--rd-font-th);
+  font-weight: 700;
+  font-size: 15px;
+  line-height: 1.35;
+  color: var(--rd-ink);
+  word-break: break-word;
+}
+/* Section headings and card titles carry more weight so the eye lands on the
+   structure of a report before the numbers. */
+.card-title {
+  font-size: 16px !important;
+  font-weight: 700 !important;
+  color: var(--rd-ink) !important;
+  letter-spacing: -0.01em;
+}
+#zone-areas .zone-title {
+  font-size: 14px;
+  font-weight: 700;
+}
 </style>
 </head>
 <body>
@@ -1304,6 +1328,73 @@ i svg{ width:1em; height:1em; display:inline-block; vertical-align:-0.12em; }
 
   <div class="panel" id="panel-chart">
     <div class="card">
+      <div class="card-title">เทียบการใช้ไฟฟ้ากลุ่มหลัก</div>
+      <div class="chart-ctrl">
+        <span class="chart-ctrl-label">มุมมอง:</span>
+        <button class="ctrl-btn green" id="g9-p-day" onclick="setG9Period('day')">รายวัน</button>
+        <button class="ctrl-btn" id="g9-p-month" onclick="setG9Period('month')">รายเดือน</button>
+        <button class="ctrl-btn" id="g9-p-year" onclick="setG9Period('year')">รายปี</button>
+      </div>
+      <div class="chart-ctrl">
+        <button class="ctrl-nav" onclick="navG9(-1)">◀</button>
+        <input class="ctrl-date" type="date" id="g9-date" onchange="renderG9Chart()">
+        <input class="ctrl-date" type="month" id="g9-month" onchange="renderG9Chart()" style="display:none">
+        <select class="ctrl-date" id="g9-year" onchange="renderG9Chart()" style="display:none"></select>
+        <button class="ctrl-nav" onclick="navG9(1)">▶</button>
+        <span style="font-size:11px;color:var(--accent);font-weight:700" id="g9-label"></span>
+      </div>
+      <div class="chart-ctrl">
+        <span class="chart-ctrl-label">เรียง:</span>
+        <button class="ctrl-btn green" id="g9-s-default" onclick="setG9Sort('default')">ตามกลุ่ม</button>
+        <button class="ctrl-btn" id="g9-s-desc" onclick="setG9Sort('desc')">มาก→น้อย</button>
+        <button class="ctrl-btn" id="g9-s-asc" onclick="setG9Sort('asc')">น้อย→มาก</button>
+        <div class="ctrl-sep"></div>
+        <button class="ctrl-btn" id="g9-pct" onclick="toggleG9Pct()">แสดง %</button>
+      </div>
+      <div class="chart-container" id="g9-chart-el"></div>
+      <div id="g9-chart-summary" style="margin-top:8px"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">กราฟเทียบการใช้ไฟฟ้าแต่ละกลุ่ม</div>
+      <div class="info-box" style="margin-bottom:10px">👇 เลือกโรง/กลุ่มที่ต้องการดูจากรายการด้านล่าง</div>
+      <div class="f-row">
+        <label class="f-label">🏭 เลือกโรง / กลุ่ม</label>
+        <select class="f-input" id="cmp-group" onchange="renderCmpChart()"></select>
+      </div>
+      <div class="chart-ctrl">
+        <span class="chart-ctrl-label">ช่วงเร็ว:</span>
+        <button class="ctrl-btn yellow" onclick="setCmpQuick('7d')">7 วัน</button>
+        <button class="ctrl-btn yellow" onclick="setCmpQuick('30d')">30 วัน</button>
+        <button class="ctrl-btn yellow" onclick="setCmpQuick('thisM')">เดือนนี้</button>
+        <button class="ctrl-btn yellow" onclick="setCmpQuick('lastM')">เดือนก่อน</button>
+        <button class="ctrl-btn yellow" onclick="setCmpQuick('3m')">3 เดือน</button>
+        <button class="ctrl-btn yellow" onclick="setCmpQuick('all')">ทั้งหมด</button>
+      </div>
+      <div class="chart-ctrl">
+        <span class="chart-ctrl-label">จาก:</span>
+        <input class="ctrl-date" type="date" id="cmp-from" onchange="renderCmpChart()">
+        <span class="chart-ctrl-label">ถึง:</span>
+        <input class="ctrl-date" type="date" id="cmp-to" onchange="renderCmpChart()">
+      </div>
+      <div class="chart-ctrl">
+        <span class="chart-ctrl-label">มุมมอง:</span>
+        <button class="ctrl-btn green" id="cmp-p-day" onclick="setCmpPeriod('day')">รายวัน</button>
+        <button class="ctrl-btn" id="cmp-p-month" onclick="setCmpPeriod('month')">รายเดือน</button>
+        <button class="ctrl-btn" id="cmp-p-year" onclick="setCmpPeriod('year')">รายปี</button>
+        <div class="ctrl-sep"></div>
+        <button class="ctrl-btn on" id="cmp-avg" onclick="toggleCmpOpt('avg')">เส้นเฉลี่ย</button>
+        <div class="ctrl-sep"></div>
+        <button class="ctrl-btn green" id="cmp-t-bar" onclick="setCmpType('bar')">แท่ง</button>
+        <button class="ctrl-btn" id="cmp-t-line" onclick="setCmpType('line')">เส้น</button>
+      </div>
+      <div class="chart-container" id="cmp-chart-el"></div>
+      <div id="cmp-chart-summary" style="margin-top:8px"></div>
+    </div>
+  </div>
+
+
+    <div class="card">
       <div class="card-title"><i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 14 3-4 3 3 4-6"/></svg></i> การใช้ไฟฟ้ารายวัน (kWh)</div>
       <div class="f-row">
         <label class="f-label">เลือก Meter</label>
@@ -1339,72 +1430,6 @@ i svg{ width:1em; height:1em; display:inline-block; vertical-align:-0.12em; }
       <div class="chart-container" id="sub-chart-el"></div>
       <div id="sub-chart-summary" style="margin-top:8px"></div>
     </div>
-
-    <div class="card">
-      <div class="card-title">เทียบการใช้ไฟฟ้ากลุ่มหลัก</div>
-      <div class="chart-ctrl">
-        <span class="chart-ctrl-label">มุมมอง:</span>
-        <button class="ctrl-btn green" id="g9-p-day" onclick="setG9Period('day')">รายวัน</button>
-        <button class="ctrl-btn" id="g9-p-month" onclick="setG9Period('month')">รายเดือน</button>
-        <button class="ctrl-btn" id="g9-p-year" onclick="setG9Period('year')">รายปี</button>
-      </div>
-      <div class="chart-ctrl">
-        <button class="ctrl-nav" onclick="navG9(-1)">◀</button>
-        <input class="ctrl-date" type="date" id="g9-date" onchange="renderG9Chart()">
-        <input class="ctrl-date" type="month" id="g9-month" onchange="renderG9Chart()" style="display:none">
-        <select class="ctrl-date" id="g9-year" onchange="renderG9Chart()" style="display:none"></select>
-        <button class="ctrl-nav" onclick="navG9(1)">▶</button>
-        <span style="font-size:11px;color:var(--accent);font-weight:700" id="g9-label"></span>
-      </div>
-      <div class="chart-ctrl">
-        <span class="chart-ctrl-label">เรียง:</span>
-        <button class="ctrl-btn green" id="g9-s-default" onclick="setG9Sort('default')">ตามกลุ่ม</button>
-        <button class="ctrl-btn" id="g9-s-desc" onclick="setG9Sort('desc')">มาก→น้อย</button>
-        <button class="ctrl-btn" id="g9-s-asc" onclick="setG9Sort('asc')">น้อย→มาก</button>
-        <div class="ctrl-sep"></div>
-        <button class="ctrl-btn" id="g9-pct" onclick="toggleG9Pct()">แสดง %</button>
-      </div>
-      <div class="chart-container" id="g9-chart-el"></div>
-      <div id="g9-chart-summary" style="margin-top:8px"></div>
-    </div>
-
-    <div class="card">
-      <div class="card-title">กราฟเทียบการใช้ไฟฟ้าแต่ละกลุ่ม</div>
-      <div class="f-row">
-        <label class="f-label">เลือกกลุ่ม</label>
-        <select class="f-input" id="cmp-group" onchange="renderCmpChart()"></select>
-      </div>
-      <div class="chart-ctrl">
-        <span class="chart-ctrl-label">ช่วงเร็ว:</span>
-        <button class="ctrl-btn yellow" onclick="setCmpQuick('7d')">7 วัน</button>
-        <button class="ctrl-btn yellow" onclick="setCmpQuick('30d')">30 วัน</button>
-        <button class="ctrl-btn yellow" onclick="setCmpQuick('thisM')">เดือนนี้</button>
-        <button class="ctrl-btn yellow" onclick="setCmpQuick('lastM')">เดือนก่อน</button>
-        <button class="ctrl-btn yellow" onclick="setCmpQuick('3m')">3 เดือน</button>
-        <button class="ctrl-btn yellow" onclick="setCmpQuick('all')">ทั้งหมด</button>
-      </div>
-      <div class="chart-ctrl">
-        <span class="chart-ctrl-label">จาก:</span>
-        <input class="ctrl-date" type="date" id="cmp-from" onchange="renderCmpChart()">
-        <span class="chart-ctrl-label">ถึง:</span>
-        <input class="ctrl-date" type="date" id="cmp-to" onchange="renderCmpChart()">
-      </div>
-      <div class="chart-ctrl">
-        <span class="chart-ctrl-label">มุมมอง:</span>
-        <button class="ctrl-btn green" id="cmp-p-day" onclick="setCmpPeriod('day')">รายวัน</button>
-        <button class="ctrl-btn" id="cmp-p-month" onclick="setCmpPeriod('month')">รายเดือน</button>
-        <button class="ctrl-btn" id="cmp-p-year" onclick="setCmpPeriod('year')">รายปี</button>
-        <div class="ctrl-sep"></div>
-        <button class="ctrl-btn on" id="cmp-avg" onclick="toggleCmpOpt('avg')">เส้นเฉลี่ย</button>
-        <div class="ctrl-sep"></div>
-        <button class="ctrl-btn green" id="cmp-t-bar" onclick="setCmpType('bar')">แท่ง</button>
-        <button class="ctrl-btn" id="cmp-t-line" onclick="setCmpType('line')">เส้น</button>
-      </div>
-      <div class="chart-container" id="cmp-chart-el"></div>
-      <div id="cmp-chart-summary" style="margin-top:8px"></div>
-    </div>
-  </div>
-
 <div class="panel" id="panel-summary">
 
   <!-- ── ตารางรายงานรายวันทั้งเดือน ── -->
@@ -2748,9 +2773,11 @@ function renderZoneAreas(){
       const isSel = activeSub && activeSub.id === s.id;
       const d = document.createElement('div');
       d.className = 'sub-card' + (isSel ? ' sel' : '') + (recordedToday ? ' today' : '');
+      /* Name only. The card used to show the id above the name — "SUB-31"
+         then "SUB NO.31" — which is the same information twice and pushed the
+         name, the part a recorder actually reads, into second place. */
       d.innerHTML = `
-        <div class="sc-id">${esc(s.id)}</div>
-        <div class="sc-name">${esc(s.name)}</div>
+        <div class="sc-name-main">${esc(s.name)}</div>
         <div class="sc-status-row">
           <span class="sc-status-dot"></span>
           <span class="sc-status-txt">${recordedToday ? 'บันทึกแล้ววันนี้' : 'ยังไม่บันทึกวันนี้'}</span>
@@ -4717,7 +4744,7 @@ function renderSubChart(){
     grid:{ borderColor:TC.border, strokeDashArray:3, xaxis:{lines:{show:false}}, yaxis:{lines:{show:true}} },
     tooltip:{ theme:TC.isDark?'dark':'light', style:{fontSize:'12px'}, y:{formatter:function(v){return v!=null?Math.round(v).toLocaleString()+' '+UNIT:'—';}} },
     colors: chartColors,
-    responsive:[{ breakpoint:640, options:{ chart:{height:300}, xaxis:{labels:{rotate:-45, rotateAlways:true, hideOverlappingLabels:true, style:{fontSize:'8px'}}}, plotOptions:{bar:{columnWidth:'80%'}} } }],
+    responsive:[{ breakpoint:640, options:{ chart:{height:300}, xaxis:{labels:{rotate:-45, rotateAlways:true, hideOverlappingLabels:true, style:{fontSize:'8px'}}}, plotOptions:{bar:{horizontal:true, borderRadius:4, barHeight:'70%', distributed:true, dataLabels:{position:'top'}}} } }],
     plotOptions:{ bar:{borderRadius:4,columnWidth:'70%'} },
     stroke:{ width:strokeW, dashArray:strokeDash },
     fill:{ opacity:chartType==='bar'?0.7:0.8 },
@@ -4879,20 +4906,29 @@ async function renderG9Chart(){
       ? function(v){ return Math.round(v).toLocaleString()+' '+UNIT+' ('+(total>0?((v/total)*100).toFixed(1):'0')+'%)'; }
       : function(v){ return v!=null?Math.round(v).toLocaleString()+' '+UNIT:'—'; };
     var opts = {
-      chart:{ type:'bar', height:320, fontFamily:'IBM Plex Mono,monospace', foreColor:TC.text2,
+      chart:{ type:'bar', height: Math.max(320, groupVals.length * 34 + 90), fontFamily:'IBM Plex Mono,monospace', foreColor:TC.text2,
         toolbar:{ show:true, tools:{download:true,zoom:true,zoomin:true,zoomout:true,pan:true,reset:true} },
         background:'transparent', animations:{enabled:true,speed:400} },
       series:[{ name:UNIT_WORD+' ('+UNIT+')', data:groupVals.map(function(g){return Math.round(g.value);}) }],
-      xaxis:{ categories:groupVals.map(function(g){return g.name;}), axisBorder:{color:TC.border}, axisTicks:{show:false}, labels:{rotate:-45, rotateAlways:true, hideOverlappingLabels:false, trim:true, maxHeight:80, style:{fontSize:'9px',colors:TC.text3}} },
-      yaxis:{ labels:{style:{fontSize:'11px',colors:TC.text2}, formatter:function(v){return Math.round(v).toLocaleString();}}, axisBorder:{show:false} },
+      /* Horizontal bars: group names are words, not dates, and rotating them to
+         -45° at 9px made the busiest chart on the page the hardest to read. */
+      xaxis:{ categories:groupVals.map(function(g){return g.name;}), axisBorder:{color:TC.border}, axisTicks:{show:false},
+              labels:{ style:{fontSize:'12px',colors:TC.text2}, formatter:function(v){ return Math.round(v).toLocaleString(); } } },
+      /* The axis carries the unit so a reader never has to guess whether a
+         bar is kWh, kW or cubic metres — the same chart component is used by
+         both the electricity and water apps. */
+      yaxis:{ title:{ text: UNIT, style:{fontSize:'12px', fontWeight:700, color:TC.text2} },
+              labels:{style:{fontSize:'12px',colors:TC.text2}, formatter:function(v){return Math.round(v).toLocaleString();}}, axisBorder:{show:false} },
       grid:{ borderColor:TC.border, strokeDashArray:3, xaxis:{lines:{show:false}}, yaxis:{lines:{show:true}} },
       tooltip:{ theme:TC.isDark?'dark':'light', style:{fontSize:'12px'}, y:{formatter:tooltipFmt} },
       colors:groupVals.map(function(g){return g.color;}),
-      responsive:[{ breakpoint:640, options:{ chart:{height:300}, xaxis:{labels:{rotate:-55, rotateAlways:true, hideOverlappingLabels:false, trim:true, maxHeight:100, style:{fontSize:'8px'}}}, plotOptions:{bar:{columnWidth:'75%'}} } }],
+      responsive:[{ breakpoint:640, options:{ dataLabels:{style:{fontSize:'10px'}}, xaxis:{labels:{style:{fontSize:'10px'}}} } }],
       plotOptions:{ bar:{borderRadius:6,columnWidth:'65%',distributed:true} },
       fill:{ opacity:0.7 },
       legend:{ show:false },
-      dataLabels:{ enabled:false },
+      dataLabels:{ enabled:true, textAnchor:'start', offsetX:6,
+        formatter:function(v){ return Math.round(v).toLocaleString(); },
+        style:{fontSize:'12px', fontWeight:700, colors:[TC.text1]} },
       states:{ hover:{filter:{type:'lighten',value:0.08}} }
     };
     await ensureApex();
@@ -5131,8 +5167,16 @@ async function renderCmpChart(){
         toolbar:{ show:true, tools:{download:true,zoom:true,zoomin:true,zoomout:true,pan:true,reset:true} },
         background:'transparent', animations:{enabled:true,speed:400} },
       series: series,
-      xaxis:{ categories:labels, axisBorder:{color:TC.border}, axisTicks:{show:false}, labels:{rotate:0, rotateAlways:false, hideOverlappingLabels:true, trim:false, style:{fontSize:'10px',colors:TC.text3}} },
-      yaxis:{ labels:{style:{fontSize:'11px',colors:TC.text2}, formatter:function(v){return Math.round(v).toLocaleString();}}, axisBorder:{show:false} },
+      /* A month of daily bars is 31 labels in the width of a phone. Rather than
+         shrinking or rotating them into illegibility, only every Nth date is
+         drawn — the bars still show every day, the axis just stops trying to
+         name all of them. */
+      xaxis:{ categories:labels, axisBorder:{color:TC.border}, axisTicks:{show:false},
+              tickAmount: Math.min(labels.length, 8),
+              labels:{ rotate:0, rotateAlways:false, hideOverlappingLabels:true, trim:false,
+                       style:{fontSize:'11px',colors:TC.text2} } },
+      yaxis:{ title:{ text: UNIT, style:{fontSize:'12px', fontWeight:700, color:TC.text2} },
+              labels:{style:{fontSize:'12px',colors:TC.text2}, formatter:function(v){return Math.round(v).toLocaleString();}}, axisBorder:{show:false} },
       grid:{ borderColor:TC.border, strokeDashArray:3, xaxis:{lines:{show:false}}, yaxis:{lines:{show:true}} },
       tooltip:{ theme:TC.isDark?'dark':'light', style:{fontSize:'12px'}, y:{formatter:function(v){return v!=null?Math.round(v).toLocaleString()+' '+UNIT:'—';}} },
       colors: chartColors,
