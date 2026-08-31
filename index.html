@@ -5013,7 +5013,7 @@ async function renderG9Chart(){
          bar is kWh, kW or cubic metres — the same chart component is used by
          both the electricity and water apps. */
       yaxis:{ title:{ text: UNIT, style:{fontSize:'12px', fontWeight:700, color:TC.text2} },
-              labels:{style:{fontSize:'12px',colors:TC.text2}, formatter:function(v){return Math.round(v).toLocaleString();}}, axisBorder:{show:false} },
+              labels:{style:{fontSize:'12px',colors:TC.text2}, formatter:function(v){return v;}}, axisBorder:{show:false} },
       grid:{ borderColor:TC.border, strokeDashArray:3, xaxis:{lines:{show:false}}, yaxis:{lines:{show:true}} },
       tooltip:{ theme:TC.isDark?'dark':'light', style:{fontSize:'12px'}, y:{formatter:tooltipFmt} },
       colors:groupVals.map(function(g){return g.color;}),
