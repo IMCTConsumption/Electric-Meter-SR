@@ -1745,6 +1745,10 @@ let currentEditingRecordId = null;
 let currentUser            = '';
 let sessionToken           = null;
 let compareMode            = 'day';
+let reportReqId         = 0;
+let zoneReportReqId     = 0;
+let g9ReqId = 0;
+let cmpReqId = 0;
 
 /* ───────── UTILITIES ───────── */
 function esc(str){
@@ -3986,8 +3990,6 @@ let reportRaw           = [];
 let reportComputed      = null;
 let zoneReportRaw       = [];
 let zoneReportComputed  = null;
-let reportReqId         = 0;
-let zoneReportReqId     = 0;
 
 function reportGroupsMain(){ return reportGroups.filter(g => g.type === 'main'); }
 function reportGroupsUtil(){ return reportGroups.filter(g => g.type === 'util'); }
@@ -4938,7 +4940,7 @@ function initG9Pickers(){
   document.getElementById('g9-month').value = months[months.length-1] || '';
 }
 
-let g9ReqId = 0;
+
 async function renderG9Chart(){
   var thisReq = ++g9ReqId;
   var el = document.getElementById('g9-chart-el');
@@ -5144,7 +5146,7 @@ function toggleCmpOpt(){
   renderCmpChart();
 }
 
-let cmpReqId = 0;
+
 function _cmpFillPeriods(allPeriods, fromVal, toVal, period){
   if(!allPeriods.length && !(fromVal && toVal)) return [];
   var pad = function(n){ return String(n).padStart(2,'0'); };
