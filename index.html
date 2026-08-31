@@ -5008,7 +5008,7 @@ async function renderG9Chart(){
       /* Horizontal bars: group names are words, not dates, and rotating them to
          -45° at 9px made the busiest chart on the page the hardest to read. */
       xaxis:{ categories:groupVals.map(function(g){return g.name;}), axisBorder:{color:TC.border}, axisTicks:{show:false},
-              labels:{ style:{fontSize:'12px',colors:TC.text2}, formatter:function(v){ return Math.round(v).toLocaleString(); } } },
+              labels:{ style:{fontSize:'12px',colors:TC.text2}, formatter:function(v){ return v; } } },
       /* The axis carries the unit so a reader never has to guess whether a
          bar is kWh, kW or cubic metres — the same chart component is used by
          both the electricity and water apps. */
