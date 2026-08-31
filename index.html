@@ -1351,34 +1351,6 @@ i svg{ width:1em; height:1em; display:inline-block; vertical-align:-0.12em; }
 
   <div class="panel" id="panel-chart">
     <div class="card">
-      <div class="card-title">เทียบการใช้ไฟฟ้ากลุ่มหลัก</div>
-      <div class="chart-ctrl">
-        <span class="chart-ctrl-label">มุมมอง:</span>
-        <button class="ctrl-btn green" id="g9-p-day" onclick="setG9Period('day')">รายวัน</button>
-        <button class="ctrl-btn" id="g9-p-month" onclick="setG9Period('month')">รายเดือน</button>
-        <button class="ctrl-btn" id="g9-p-year" onclick="setG9Period('year')">รายปี</button>
-      </div>
-      <div class="chart-ctrl">
-        <button class="ctrl-nav" onclick="navG9(-1)">◀</button>
-        <input class="ctrl-date" type="date" id="g9-date" onchange="renderG9Chart()">
-        <input class="ctrl-date" type="month" id="g9-month" onchange="renderG9Chart()" style="display:none">
-        <select class="ctrl-date" id="g9-year" onchange="renderG9Chart()" style="display:none"></select>
-        <button class="ctrl-nav" onclick="navG9(1)">▶</button>
-        <span style="font-size:11px;color:var(--accent);font-weight:700" id="g9-label"></span>
-      </div>
-      <div class="chart-ctrl">
-        <span class="chart-ctrl-label">เรียง:</span>
-        <button class="ctrl-btn green" id="g9-s-default" onclick="setG9Sort('default')">ตามกลุ่ม</button>
-        <button class="ctrl-btn" id="g9-s-desc" onclick="setG9Sort('desc')">มาก→น้อย</button>
-        <button class="ctrl-btn" id="g9-s-asc" onclick="setG9Sort('asc')">น้อย→มาก</button>
-        <div class="ctrl-sep"></div>
-        <button class="ctrl-btn" id="g9-pct" onclick="toggleG9Pct()">แสดง %</button>
-      </div>
-      <div class="chart-container" id="g9-chart-el"></div>
-      <div id="g9-chart-summary" style="margin-top:8px"></div>
-    </div>
-
-    <div class="card">
       <div class="card-title">กราฟเทียบการใช้ไฟฟ้าแต่ละกลุ่ม</div>
       <div class="info-box" style="margin-bottom:10px">👇 เลือกโรง/กลุ่มที่ต้องการดูจากรายการด้านล่าง</div>
       <div class="f-row">
@@ -1417,6 +1389,34 @@ i svg{ width:1em; height:1em; display:inline-block; vertical-align:-0.12em; }
   
 
         <div class="card">
+      <div class="card-title">เทียบการใช้ไฟฟ้ากลุ่มหลัก</div>
+      <div class="chart-ctrl">
+        <span class="chart-ctrl-label">มุมมอง:</span>
+        <button class="ctrl-btn green" id="g9-p-day" onclick="setG9Period('day')">รายวัน</button>
+        <button class="ctrl-btn" id="g9-p-month" onclick="setG9Period('month')">รายเดือน</button>
+        <button class="ctrl-btn" id="g9-p-year" onclick="setG9Period('year')">รายปี</button>
+      </div>
+      <div class="chart-ctrl">
+        <button class="ctrl-nav" onclick="navG9(-1)">◀</button>
+        <input class="ctrl-date" type="date" id="g9-date" onchange="renderG9Chart()">
+        <input class="ctrl-date" type="month" id="g9-month" onchange="renderG9Chart()" style="display:none">
+        <select class="ctrl-date" id="g9-year" onchange="renderG9Chart()" style="display:none"></select>
+        <button class="ctrl-nav" onclick="navG9(1)">▶</button>
+        <span style="font-size:11px;color:var(--accent);font-weight:700" id="g9-label"></span>
+      </div>
+      <div class="chart-ctrl">
+        <span class="chart-ctrl-label">เรียง:</span>
+        <button class="ctrl-btn green" id="g9-s-default" onclick="setG9Sort('default')">ตามกลุ่ม</button>
+        <button class="ctrl-btn" id="g9-s-desc" onclick="setG9Sort('desc')">มาก→น้อย</button>
+        <button class="ctrl-btn" id="g9-s-asc" onclick="setG9Sort('asc')">น้อย→มาก</button>
+        <div class="ctrl-sep"></div>
+        <button class="ctrl-btn" id="g9-pct" onclick="toggleG9Pct()">แสดง %</button>
+      </div>
+      <div class="chart-container" id="g9-chart-el"></div>
+      <div id="g9-chart-summary" style="margin-top:8px"></div>
+    </div>
+
+    <div class="card">
       <div class="card-title"><i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 14 3-4 3 3 4-6"/></svg></i> การใช้ไฟฟ้ารายวัน (kWh)</div>
       <div class="f-row">
         <label class="f-label">เลือก Meter</label>
@@ -2714,7 +2714,7 @@ function goTab(name){
   const tabEl = document.querySelectorAll('.tab')[idx];
   if(tabEl) tabEl.classList.add('active');
   if(name === 'data')     { ensureAdminRecords(); renderData(); renderStats(); updateRecordWindowNotice(); }
-  if(name === 'chart')    { ensureAdminRecords(); populateDDs(); setSubQuick('30d'); buildCompareGroupOptions(); initG9Pickers(); renderG9Chart(); }
+  if(name === 'chart')    { ensureAdminRecords(); populateDDs(); setSubQuick('30d'); buildCompareGroupOptions(); renderCmpChart(); initG9Pickers(); renderG9Chart(); }
   if(name === 'qr')       { renderQR(); }
   if(name === 'settings') { renderSubList(); renderCalendarList(); }
   if(name === 'summary')  { onTabSummary(); }
@@ -4837,7 +4837,7 @@ function renderSubChart(){
     grid:{ borderColor:TC.border, strokeDashArray:3, xaxis:{lines:{show:false}}, yaxis:{lines:{show:true}} },
     tooltip:{ theme:TC.isDark?'dark':'light', style:{fontSize:'12px'}, y:{formatter:function(v){return v!=null?Math.round(v).toLocaleString()+' '+UNIT:'—';}} },
     colors: chartColors,
-    responsive:[{ breakpoint:640, options:{ chart:{height:300}, xaxis:{labels:{rotate:-45, rotateAlways:true, hideOverlappingLabels:true, style:{fontSize:'8px'}}}, plotOptions:{bar:{horizontal:true, borderRadius:4, barHeight:'70%', distributed:true, dataLabels:{position:'top'}}} } }],
+    responsive:[{ breakpoint:640, options:{ chart:{height:300}, xaxis:{labels:{rotate:-45, rotateAlways:true, hideOverlappingLabels:true, style:{fontSize:'8px'}}}, plotOptions:{bar:{columnWidth:'80%'}} } }],
     plotOptions:{ bar:{borderRadius:4,columnWidth:'70%'} },
     stroke:{ width:strokeW, dashArray:strokeDash },
     fill:{ opacity:chartType==='bar'?0.7:0.8 },
@@ -5016,7 +5016,7 @@ async function renderG9Chart(){
       tooltip:{ theme:TC.isDark?'dark':'light', style:{fontSize:'12px'}, y:{formatter:tooltipFmt} },
       colors:groupVals.map(function(g){return g.color;}),
       responsive:[{ breakpoint:640, options:{ dataLabels:{style:{fontSize:'10px'}}, xaxis:{labels:{style:{fontSize:'10px'}}} } }],
-      plotOptions:{ bar:{borderRadius:6,columnWidth:'65%',distributed:true} },
+      plotOptions:{ bar:{horizontal:true, borderRadius:6, barHeight:'70%', distributed:true, dataLabels:{position:'top'}} },
       fill:{ opacity:0.7 },
       legend:{ show:false },
       dataLabels:{ enabled:true, textAnchor:'start', offsetX:6,
