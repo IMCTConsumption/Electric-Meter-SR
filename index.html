@@ -8,6 +8,12 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;700&display=swap" rel="stylesheet">
 <style>
 
+/* ═══════════════════════════════════════════════════════════
+   REDESIGN LAYER — SESSION 1
+   Design tokens matched to the IMCT Consumption hub (navy + cyan + off-white),
+   with dark-mode parity. Component styles for the new header + sidebar drawer +
+   centered login. All original panel/card/button styles below remain untouched.
+   =========================================================== */
 :root {
   --rd-ink:          #0A1628;
   --rd-ink-2:        #3A4A5F;
@@ -2759,6 +2765,18 @@ function goTab(name){
   if(name === 'data')     { ensureAdminRecords(); renderData(); renderStats(); updateRecordWindowNotice(); }
   if(name === 'chart'){
     ensureAdminRecords(); populateDDs(); setSubQuick('30d'); buildCompareGroupOptions(); initG9Pickers();
+    /* First open of this tab in the session: default the top card — "กราฟ
+       เทียบการใช้ไฟฟ้าแต่ละกลุ่ม" — to the current month so it opens showing
+       "this month, day by day" instead of an empty picker. Guarded on
+       cmp-from being unset so re-opening the tab later never clobbers a
+       range the person already picked. cmpState.period already defaults to
+       'day', so no change needed there. */
+    const cmpFromEl = document.getElementById('cmp-from');
+    if(cmpFromEl && !cmpFromEl.value){
+      const r = getQuickRange('thisM');
+      cmpFromEl.value = r[0];
+      document.getElementById('cmp-to').value = r[1];
+    }
     /* The card the person sees first — "กราฟเทียบการใช้ไฟฟ้าแต่ละกลุ่ม" — is
        rendered to completion before the second chart even starts. Both used to
        fire together; they hit getSummaryCached with different date ranges (so
@@ -3631,8 +3649,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if(recorderPassEl) recorderPassEl.addEventListener('keydown', e => { if(e.key === 'Enter') handleRecorderLogin(); });
 });
 
-// init() is called at the very end of the concatenated script (core-tail.js),
-// not here — see the note there for why.
+init();
 
 
 
@@ -5532,9 +5549,9 @@ setInterval(() => {
   else if (r > 200 && g < 100) dot.classList.add('err');
 }, 500);
 
+
 /* ── generated tab hooks (see build.js) ── */
 function onTabSummary(){ buildMonthOptions(); populateZoneReportSelect(); loadReport(); loadZoneReport(); }
-function onTabCost(){ buildCostMonthOptions(); loadTariffs().then(() => { renderTariffForms(); loadCostData(); }); }
-init();</script>
+function onTabCost(){ buildCostMonthOptions(); loadTariffs().then(() => { renderTariffForms(); loadCostData(); }); }</script>
 </body>
 </html>
