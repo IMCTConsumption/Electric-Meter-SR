@@ -8,12 +8,6 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;700&display=swap" rel="stylesheet">
 <style>
 
-/* ═══════════════════════════════════════════════════════════
-   REDESIGN LAYER — SESSION 1
-   Design tokens matched to the IMCT Consumption hub (navy + cyan + off-white),
-   with dark-mode parity. Component styles for the new header + sidebar drawer +
-   centered login. All original panel/card/button styles below remain untouched.
-   =========================================================== */
 :root {
   --rd-ink:          #0A1628;
   --rd-ink-2:        #3A4A5F;
@@ -949,6 +943,38 @@ i svg{ width:1em; height:1em; display:inline-block; vertical-align:-0.12em; }
   font-size: 14px;
   font-weight: 700;
 }
+
+/* Three-way role picker on the login screen. Each button carries equal
+   visual weight — recorder, viewer, and admin are a deliberate choice, not a
+   default with two small escape-hatch links underneath it. */
+.rd-role-pick {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.rd-role-btn {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 16px 18px;
+  border-radius: 10px;
+  border: 1.5px solid var(--rd-line);
+  background: var(--rd-surface-2);
+  color: var(--rd-ink);
+  cursor: pointer;
+  text-align: left;
+  transition: var(--rd-transition);
+}
+.rd-role-btn:hover {
+  border-color: var(--rd-accent);
+  background: var(--rd-accent-soft);
+  transform: translateY(-1px);
+}
+.rd-role-btn svg { width: 22px; height: 22px; flex-shrink: 0; color: var(--rd-accent-ink); }
+.rd-role-btn-txt { display: flex; flex-direction: column; gap: 2px; }
+.rd-role-btn-txt strong { font-family: var(--rd-font-display); font-size: 15px; font-weight: 700; }
+.rd-role-btn-txt small { font-family: var(--rd-font-th); font-size: 12px; color: var(--rd-ink-3); }
 </style>
 </head>
 <body>
@@ -970,12 +996,31 @@ i svg{ width:1em; height:1em; display:inline-block; vertical-align:-0.12em; }
       <div class="rd-login-title" id="rd-login-title">Sign in to log readings</div>
       <div class="rd-login-subtitle" id="rd-login-subtitle">กรอกรหัสผ่านทีมจดมิเตอร์เพื่อเริ่มบันทึกค่า</div>
 
-      <!-- The original 2-button "choose" screen is superseded by the toggle
-           links below, but its ID must stay in the DOM: showRecorderLogin(),
-           showAdminLogin() and backToChoose() all reference #login-choose
-           directly (they just don't run any code that requires it to be
-           visible — they only ever set its style.display). -->
-      <div id="login-choose" style="display:none"></div>
+<div id="login-choose">
+        <div class="rd-role-pick">
+          <button class="rd-role-btn" onclick="rdShowRecorder()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+            <span class="rd-role-btn-txt">
+              <strong>ทีมจดมิเตอร์</strong>
+              <small>บันทึกค่ามิเตอร์ประจำวัน</small>
+            </span>
+          </button>
+          <button class="rd-role-btn" onclick="rdShowViewer()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/></svg>
+            <span class="rd-role-btn-txt">
+              <strong>ดูรายงาน</strong>
+              <small>กราฟและสรุปการใช้พลังงาน</small>
+            </span>
+          </button>
+          <button class="rd-role-btn" onclick="rdShowAdmin()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m2 7 4.5 4.5L12 5l5.5 6.5L22 7v11a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1Z"/></svg>
+            <span class="rd-role-btn-txt">
+              <strong>แอดมิน</strong>
+              <small>จัดการมิเตอร์และระบบ</small>
+            </span>
+          </button>
+        </div>
+      </div>
 
       <!-- RECORDER form — default visible. Every element ID below matches the
            ORIGINAL app.js exactly (#recorder-pass / #recorder-login-err /
@@ -991,10 +1036,7 @@ i svg{ width:1em; height:1em; display:inline-block; vertical-align:-0.12em; }
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
         </button>
         <div class="rd-login-toggle">
-          <span class="rd-login-toggle-txt">มาดูรายงาน?</span>
-          <button class="rd-login-toggle-link" onclick="rdShowViewer()">Report viewer</button>
-          <span class="rd-login-toggle-txt" style="margin-left:8px">·</span>
-          <button class="rd-login-toggle-link" onclick="rdShowAdmin()">Admin access</button>
+          <button class="rd-login-toggle-link" onclick="backToChoose()">← เลือกโหมดอื่น</button>
         </div>
       </div>
 
@@ -1012,8 +1054,7 @@ i svg{ width:1em; height:1em; display:inline-block; vertical-align:-0.12em; }
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
         </button>
         <div class="rd-login-toggle">
-          <span class="rd-login-toggle-txt">กลับไปหน้าจดมิเตอร์</span>
-          <button class="rd-login-toggle-link" onclick="rdShowRecorder()">Recorder</button>
+          <button class="rd-login-toggle-link" onclick="backToChoose()">← เลือกโหมดอื่น</button>
         </div>
       </div>
 
@@ -1035,10 +1076,7 @@ i svg{ width:1em; height:1em; display:inline-block; vertical-align:-0.12em; }
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
         </button>
         <div class="rd-login-toggle">
-          <span class="rd-login-toggle-txt">Not an admin?</span>
-          <button class="rd-login-toggle-link" onclick="rdShowRecorder()">Recorder</button>
-          <span class="rd-login-toggle-txt" style="margin-left:8px">·</span>
-          <button class="rd-login-toggle-link" onclick="rdShowViewer()">Report viewer</button>
+          <button class="rd-login-toggle-link" onclick="backToChoose()">← เลือกโหมดอื่น</button>
         </div>
       </div>
     </div>
@@ -1745,10 +1783,6 @@ let currentEditingRecordId = null;
 let currentUser            = '';
 let sessionToken           = null;
 let compareMode            = 'day';
-let reportReqId         = 0;
-let zoneReportReqId     = 0;
-let g9ReqId = 0;
-let cmpReqId = 0;
 
 /* ───────── UTILITIES ───────── */
 function esc(str){
@@ -1929,12 +1963,12 @@ function logout(){
   activeSubRecent = [];
   lsRemove('records');
   hideSessionExpiredBanner();
-  // #login-choose is an empty compatibility stub after the login redesign —
-  // showing it left the gate visually blank. Land on the recorder form instead.
+  // Land on the three-way picker so recorder/viewer/admin are an explicit
+  // choice, not a default someone has to notice a small link to get past.
   const gate = document.getElementById('login-gate');
   gate.style.display = 'flex';
   gate.style.opacity = '1';
-  rdShowRecorder();
+  backToChoose();
   const errA = document.getElementById('login-err');
   if(errA) errA.style.display = 'none';
   const errR = document.getElementById('recorder-login-err');
@@ -2672,10 +2706,15 @@ async function init(){
       }
     } else {
       await loadFromServer();
-      showRecorderLogin();
+      backToChoose();
     }
   } else {
     loadFromServer();
+    // No QR param and no restored session: this is a bare app open, so land
+    // on the three-way picker. Without this, the recorder form was left
+    // showing by default (its only "hidden" state came from the query-param
+    // branch above), so a bare open silently skipped the picker entirely.
+    if(!hasSession) backToChoose();
   }
 }
 
@@ -2718,7 +2757,16 @@ function goTab(name){
   const tabEl = document.querySelectorAll('.tab')[idx];
   if(tabEl) tabEl.classList.add('active');
   if(name === 'data')     { ensureAdminRecords(); renderData(); renderStats(); updateRecordWindowNotice(); }
-  if(name === 'chart')    { ensureAdminRecords(); populateDDs(); setSubQuick('30d'); buildCompareGroupOptions(); renderCmpChart(); initG9Pickers(); renderG9Chart(); }
+  if(name === 'chart'){
+    ensureAdminRecords(); populateDDs(); setSubQuick('30d'); buildCompareGroupOptions(); initG9Pickers();
+    /* The card the person sees first — "กราฟเทียบการใช้ไฟฟ้าแต่ละกลุ่ม" — is
+       rendered to completion before the second chart even starts. Both used to
+       fire together; they hit getSummaryCached with different date ranges (so
+       different cache keys), meaning two heavy summary requests queued back to
+       back with no ordering guarantee. Awaiting the first means the chart at
+       the top of the screen is never left waiting behind one lower down. */
+    (async () => { await renderCmpChart(); renderG9Chart(); })();
+  }
   if(name === 'qr')       { renderQR(); }
   if(name === 'settings') { renderSubList(); renderCalendarList(); }
   if(name === 'summary')  { onTabSummary(); }
@@ -3583,7 +3631,8 @@ document.addEventListener('DOMContentLoaded', () => {
   if(recorderPassEl) recorderPassEl.addEventListener('keydown', e => { if(e.key === 'Enter') handleRecorderLogin(); });
 });
 
-init();
+// init() is called at the very end of the concatenated script (core-tail.js),
+// not here — see the note there for why.
 
 
 
@@ -3990,6 +4039,8 @@ let reportRaw           = [];
 let reportComputed      = null;
 let zoneReportRaw       = [];
 let zoneReportComputed  = null;
+let reportReqId         = 0;
+let zoneReportReqId     = 0;
 
 function reportGroupsMain(){ return reportGroups.filter(g => g.type === 'main'); }
 function reportGroupsUtil(){ return reportGroups.filter(g => g.type === 'util'); }
@@ -4940,7 +4991,7 @@ function initG9Pickers(){
   document.getElementById('g9-month').value = months[months.length-1] || '';
 }
 
-
+let g9ReqId = 0;
 async function renderG9Chart(){
   var thisReq = ++g9ReqId;
   var el = document.getElementById('g9-chart-el');
@@ -5006,9 +5057,13 @@ async function renderG9Chart(){
         background:'transparent', animations:{enabled:true,speed:400} },
       series:[{ name:UNIT_WORD+' ('+UNIT+')', data:groupVals.map(function(g){return Math.round(g.value);}) }],
       /* Horizontal bars: group names are words, not dates, and rotating them to
-         -45° at 9px made the busiest chart on the page the hardest to read. */
+         -45° at 9px made the busiest chart on the page the hardest to read.
+         NOTE: when horizontal, ApexCharts still renders the category names
+         through xaxis.labels — a numeric formatter here (Math.round, etc.)
+         gets called with the group NAME and returns NaN. This formatter must
+         stay a pass-through; the numeric axis is yaxis below. */
       xaxis:{ categories:groupVals.map(function(g){return g.name;}), axisBorder:{color:TC.border}, axisTicks:{show:false},
-              labels:{ style:{fontSize:'12px',colors:TC.text2}, formatter:function(v){ return v; } } },
+              labels:{ style:{fontSize:'12px',colors:TC.text2} } },
       /* The axis carries the unit so a reader never has to guess whether a
          bar is kWh, kW or cubic metres — the same chart component is used by
          both the electricity and water apps. */
@@ -5146,7 +5201,7 @@ function toggleCmpOpt(){
   renderCmpChart();
 }
 
-
+let cmpReqId = 0;
 function _cmpFillPeriods(allPeriods, fromVal, toVal, period){
   if(!allPeriods.length && !(fromVal && toVal)) return [];
   var pad = function(n){ return String(n).padStart(2,'0'); };
@@ -5477,9 +5532,9 @@ setInterval(() => {
   else if (r > 200 && g < 100) dot.classList.add('err');
 }, 500);
 
-
 /* ── generated tab hooks (see build.js) ── */
 function onTabSummary(){ buildMonthOptions(); populateZoneReportSelect(); loadReport(); loadZoneReport(); }
-function onTabCost(){ buildCostMonthOptions(); loadTariffs().then(() => { renderTariffForms(); loadCostData(); }); }</script>
+function onTabCost(){ buildCostMonthOptions(); loadTariffs().then(() => { renderTariffForms(); loadCostData(); }); }
+init();</script>
 </body>
 </html>
