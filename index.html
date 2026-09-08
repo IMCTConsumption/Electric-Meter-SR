@@ -5402,7 +5402,7 @@ async function renderCmpChart(){
     }
     var opts = {
       chart:{ type:cmpState.type==='bar'?'bar':'line', height:340, fontFamily:'IBM Plex Mono,monospace', foreColor:TC.text2,
-        stacked: useHolSplit,
+        stacked: false,
         toolbar:{ show:true, tools:{download:true,zoom:true,zoomin:true,zoomout:true,pan:true,reset:true} },
         background:'transparent', animations:{enabled:true,speed:400} },
       series: series,
