@@ -2392,14 +2392,23 @@ let _adminRecordsInFlight = null;
    two minutes. It is now pulled the first time a tab that needs it is opened. */
 let _adminRecordsLoaded = false;
 
+/* Admin or report-viewer — matches the backend's _requireReportAccess on
+   getRawRecords. The frontend guard used to check `appMode !== 'admin'` only,
+   which meant a viewer's session was blocked from ever calling this even
+   after the backend was opened up to it: the fetch never fired, so the
+   per-meter chart card stayed on "no data" while the group-level charts
+   (which read from server-side summaries, not this) worked fine. */
 async function ensureAdminRecords(){
-  if(_adminRecordsLoaded || appMode !== 'admin' || !sessionToken) return;
+  const allowed = appMode === 'admin' || appMode === 'viewer';
+  if(_adminRecordsLoaded || !allowed || !sessionToken) return;
   setSyncStatus('busy','กำลังโหลดข้อมูล...');
   try{
     await loadAdminRecords();
     _adminRecordsLoaded = true;
     setSyncStatus('ok','โหลดข้อมูลแล้ว');
-    renderData(); updateRecordWindowNotice(); updateBadge();
+    // Data-tab rendering and its record-count badge are admin-only UI; a
+    // viewer never has that panel in the DOM active, so skip the wasted work.
+    if(appMode === 'admin'){ renderData(); updateRecordWindowNotice(); updateBadge(); }
     if(document.querySelector('.panel.active')?.id === 'panel-chart'){
       populateDDs(); initG9Pickers(); renderSubChart();
     }
@@ -5592,8 +5601,6 @@ setInterval(() => {
   else if (r > 200 && g < 100) dot.classList.add('err');
 }, 500);
 
-
-/* ── generated tab hooks (see build.js) ── */
 function onTabSummary(){ buildMonthOptions(); populateZoneReportSelect(); loadReport(); loadZoneReport(); }
 function onTabCost(){ buildCostMonthOptions(); loadTariffs().then(() => { renderTariffForms(); loadCostData(); }); }
 init();</script>
