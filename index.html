@@ -2677,14 +2677,34 @@ function computeUsed(rawRecords){
       // flow into the Data table, the charts and the group totals as if it
       // were kWh. null keeps them out and lets the UI render "—".
       if(vt === 'demand' || vt === 'snapshot'){ rec.used = null; return; }
-      if(i === chain.length - 1){ rec.used = 0; }
-      else {
-        const diff = parseFloat(chain[i+1].kwh) - parseFloat(rec.kwh);
-        // A counter's difference IS meaningful (events elapsed), so it is
-        // computed — but it is a count, not energy, and callers that total
-        // kWh must exclude it. See sumGroupOnDay().
-        rec.used = Math.max(0, diff) * (vt === 'counter' ? 1 : multiplier);
+
+      /* A cumulative register in service never legitimately reads 0, so a 0
+         here means "nobody wrote anything down", not "nothing was used" — see
+         _isUsableReading(). This used to only be enforced server-side
+         (meterUsedOnDay, which the group charts and the monthly report read
+         from), while this client-side path — the one the per-meter chart and
+         the Data table read from — computed straight off whatever was typed,
+         zero included. A single 0 in the middle of a chain therefore produced
+         two wrong numbers here that the group total never had: the day before
+         it clamped to 0 (losing that day's real usage) and the 0 day itself
+         invented a spike equal to the meter's entire lifetime reading. That
+         made a per-meter total and the group total genuinely disagree even
+         though both were "reading the same data" — because the 0 was only
+         being treated as invalid on one of the two paths. */
+      if(!_isUsableReading(meterId, parseFloat(rec.kwh))){ rec.used = null; return; }
+
+      let nextVal = null;
+      for(let k = i + 1; k < chain.length; k++){
+        const v = parseFloat(chain[k].kwh);
+        if(_isUsableReading(meterId, v)){ nextVal = v; break; }
       }
+      if(nextVal === null){ rec.used = 0; return; }   // last usable reading in the chain
+
+      const diff = nextVal - parseFloat(rec.kwh);
+      // A counter's difference IS meaningful (events elapsed), so it is
+      // computed — but it is a count, not energy, and callers that total
+      // kWh must exclude it. See sumGroupOnDay().
+      rec.used = Math.max(0, diff) * (vt === 'counter' ? 1 : multiplier);
     });
   });
   const _out = Object.values(groups).flat();
