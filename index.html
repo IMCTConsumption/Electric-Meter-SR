@@ -5401,7 +5401,13 @@ async function renderCmpChart(){
       strokeW.push(cmpState.type==='bar' ? 2 : 2); strokeDash.push(5);
     }
     var barMax = Math.max.apply(null, dataPoints.map(function(d){ return d.value || 0; }));
-    var yMax = barMax > 0 ? Math.ceil(barMax * 1.1) : undefined;
+    var yMax = undefined;
+    if (barMax > 0) {
+      var padded = barMax * 1.1;
+      // เลือกหน่วยปัดตามขนาดตัวเลข: ปัดขึ้นเป็นหลักที่เหมาะสมเพื่อให้ได้เลขกลม
+      var magnitude = Math.pow(10, Math.floor(Math.log10(padded)) - 1);
+      yMax = Math.ceil(padded / magnitude) * magnitude;
+    }
     var opts = {
       chart:{ type:cmpState.type==='bar'?'bar':'line', height:340, fontFamily:'IBM Plex Mono,monospace', foreColor:TC.text2,
         stacked: useHolSplit,
@@ -5417,6 +5423,7 @@ async function renderCmpChart(){
               labels:{ rotate:0, rotateAlways:false, hideOverlappingLabels:true, trim:false,
                        style:{fontSize:'11px',colors:TC.text2} } },
       yaxis:{ 
+        min: 0,
         max: yMax,
         title:{ text: UNIT, style:{fontSize:'12px', fontWeight:700, color:TC.text2} },
         labels:{style:{fontSize:'12px',colors:TC.text2}, formatter:function(v){return Math.round(v).toLocaleString();}}, 
