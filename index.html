@@ -5396,10 +5396,12 @@ async function renderCmpChart(){
     var strokeDash = series.map(function(){return 0;});
     if(cmpState.showAvg){
       var cmpAvgLine = Math.round(cmpState.period === 'day' ? cmpAvgWork : avg);
-      series.push({ name:'ค่าเฉลี่ย', data:dataPoints.map(function(){return cmpAvgLine;}), type:'line', yAxisIndex: 1 });
+      series.push({ name:'ค่าเฉลี่ย', data:dataPoints.map(function(){return cmpAvgLine;}), type:'line' });
       chartColors.push(TC.orange+'77');
       strokeW.push(cmpState.type==='bar' ? 2 : 2); strokeDash.push(5);
     }
+    var barMax = Math.max.apply(null, dataPoints.map(function(d){ return d.value || 0; }));
+    var yMax = barMax > 0 ? Math.ceil(barMax * 1.1) : undefined;
     var opts = {
       chart:{ type:cmpState.type==='bar'?'bar':'line', height:340, fontFamily:'IBM Plex Mono,monospace', foreColor:TC.text2,
         stacked: useHolSplit,
@@ -5414,16 +5416,13 @@ async function renderCmpChart(){
               tickAmount: Math.min(labels.length, 8),
               labels:{ rotate:0, rotateAlways:false, hideOverlappingLabels:true, trim:false,
                        style:{fontSize:'11px',colors:TC.text2} } },
-      yaxis: cmpState.showAvg ? [
-        { title:{ text: UNIT, style:{fontSize:'12px', fontWeight:700, color:TC.text2} },
-          labels:{style:{fontSize:'12px',colors:TC.text2}, formatter:function(v){return Math.round(v).toLocaleString();}}, 
-          axisBorder:{show:false} },
-        { show:false, opposite:true }
-      ] : {
+      yaxis:{ 
+        max: yMax,
         title:{ text: UNIT, style:{fontSize:'12px', fontWeight:700, color:TC.text2} },
         labels:{style:{fontSize:'12px',colors:TC.text2}, formatter:function(v){return Math.round(v).toLocaleString();}}, 
-        axisBorder:{show:false}
+        axisBorder:{show:false} 
       },
+       
       grid:{ borderColor:TC.border, strokeDashArray:3, xaxis:{lines:{show:false}}, yaxis:{lines:{show:true}} },
       tooltip:{ theme:TC.isDark?'dark':'light', style:{fontSize:'12px'}, y:{formatter:function(v){return v!=null?Math.round(v).toLocaleString()+' '+UNIT:'—';}} },
       colors: chartColors,
