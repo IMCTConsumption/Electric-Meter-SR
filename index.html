@@ -4930,6 +4930,99 @@ function aggregateRecords(recs, period, dateFrom, dateTo){
   });
 }
 
+/* Shared by renderSubChart and renderCmpChart — everything from "here is a
+   list of {label, value, hol} points" onward is identical between the two
+   charts. Before this, the per-meter chart was missing the unit label on the
+   Y axis and the tick-spacing limit that the group chart had — a genuine
+   divergence bug, not a style choice, caused by the two functions having
+   been built and hand-edited separately over several sessions. Routing both
+   through one function makes that class of bug structurally impossible: a
+   fix here is a fix for both charts, always, because there is only one
+   "here". The two callers still each own how they FETCH their dataPoints
+   (one is a synchronous filter over `records`, the other an async server
+   summary) — that part is genuinely different and stays separate. */
+function buildChartOpts(dataPoints, state, TC){
+  const total = dataPoints.reduce((a,d) => a + d.value, 0);
+  const avg = dataPoints.length ? total / dataPoints.length : 0;
+  const pl = state.period === 'day' ? 'วัน' : state.period === 'month' ? 'เดือน' : 'ปี';
+
+  let avgWork = 0, avgHol = 0, nWork = 0, nHol = 0;
+  if(state.period === 'day'){
+    let sumWork = 0, sumHol = 0;
+    dataPoints.forEach(d => { if(d.hol){ sumHol += d.value; nHol++; } else { sumWork += d.value; nWork++; } });
+    avgWork = nWork ? sumWork / nWork : 0;
+    avgHol  = nHol  ? sumHol  / nHol  : 0;
+  }
+
+  const labels = dataPoints.map(d => d.label);
+  const chartType = state.type === 'bar' ? 'bar' : 'line';
+  const useHolSplit = state.period === 'day' && state.showHol && chartType === 'bar';
+
+  let series, chartColors;
+  if(useHolSplit){
+    const workData = dataPoints.map(d => d.hol ? null : Math.round(d.value));
+    const holData  = dataPoints.map(d => d.hol ? Math.round(d.value) : null);
+    series = [
+      { name:UNIT_WORD+' (วันทำงาน)', data:workData },
+      { name:UNIT_WORD+' (วันหยุด)',  data:holData  }
+    ];
+    chartColors = [TC.green, TC.orange];
+  } else {
+    const values = dataPoints.map(d => Math.round(d.value));
+    series = [{ name:UNIT_WORD+' ('+UNIT+'/'+pl+')', data:values }];
+    chartColors = [chartType === 'bar' ? TC.green : TC.accent];
+  }
+  let strokeW = series.map(() => chartType === 'bar' ? 0 : 2.5);
+  let strokeDash = series.map(() => 0);
+  if(state.showAvg){
+    const avgLine = Math.round(state.period === 'day' ? avgWork : avg);
+    series.push({ name:'ค่าเฉลี่ย', data:dataPoints.map(() => avgLine), type:'line' });
+    chartColors.push(TC.orange+'77');
+    strokeW.push(2); strokeDash.push(5);
+  }
+
+  const chartOpts = {
+    chart:{ type:chartType, height:340, fontFamily:'IBM Plex Mono,monospace', foreColor:TC.text2,
+      stacked: useHolSplit,
+      toolbar:{ show:true, tools:{download:true,zoom:true,zoomin:true,zoomout:true,pan:true,reset:true} },
+      background:'transparent', animations:{enabled:true,speed:400} },
+    series: series,
+    /* Same reasoning on both charts: a month of daily bars is too many labels
+       for the width available, so only ~8 are drawn — every bar still shows,
+       the axis just stops trying to caption all of them. */
+    xaxis:{ categories:labels, axisBorder:{color:TC.border}, axisTicks:{show:false},
+            tickAmount: Math.min(labels.length, 8),
+            labels:{ rotate:0, rotateAlways:false, hideOverlappingLabels:true, trim:false,
+                     style:{fontSize:'11px',colors:TC.text2} } },
+    yaxis:{ title:{ text: UNIT, style:{fontSize:'12px', fontWeight:700, color:TC.text2} },
+            labels:{style:{fontSize:'12px',colors:TC.text2}, formatter:v => Math.round(v).toLocaleString()},
+            axisBorder:{show:false} },
+    grid:{ borderColor:TC.border, strokeDashArray:3, xaxis:{lines:{show:false}}, yaxis:{lines:{show:true}} },
+    tooltip:{ theme:TC.isDark?'dark':'light', style:{fontSize:'12px'}, y:{formatter:v => v!=null?Math.round(v).toLocaleString()+' '+UNIT:'—'} },
+    colors: chartColors,
+    responsive:[{ breakpoint:640, options:{ chart:{height:300}, xaxis:{labels:{rotate:-45, rotateAlways:true, hideOverlappingLabels:true, style:{fontSize:'8px'}}}, plotOptions:{bar:{columnWidth:'80%'}} } }],
+    plotOptions:{ bar:{borderRadius:4,columnWidth:'70%'} },
+    stroke:{ width:strokeW, dashArray:strokeDash },
+    fill:{ opacity:chartType==='bar'?0.7:0.8 },
+    legend:{ show:series.length>1, fontSize:'11px', labels:{colors:TC.text2}, markers:{shape:'square',size:6} },
+    dataLabels:{ enabled:false },
+    states:{ hover:{filter:{type:'lighten',value:0.08}} }
+  };
+
+  let avgChips;
+  if(state.period === 'day' && (nWork || nHol)){
+    avgChips = '<span class="chip chip-green">เฉลี่ยวันทำงาน '+Math.round(avgWork).toLocaleString()+' '+UNIT+' ('+nWork+' วัน)</span> '+
+               '<span class="chip" style="background:rgba(251,146,60,.15);color:var(--orange);border:1px solid rgba(251,146,60,.4)">เฉลี่ยวันหยุด '+Math.round(avgHol).toLocaleString()+' '+UNIT+' ('+nHol+' วัน)</span>';
+  } else {
+    avgChips = '<span class="chip chip-green">เฉลี่ย '+Math.round(avg).toLocaleString()+' '+UNIT+'/'+pl+'</span>';
+  }
+  const summaryHtml = '<span class="chip chip-green">'+UNIT_ICON+' รวม '+Math.round(total).toLocaleString()+' '+UNIT+'</span> ' +
+    avgChips + ' ' +
+    '<span class="chip" style="background:var(--accent-dim);color:var(--accent);border:1px solid var(--accent-border)">'+dataPoints.length+' '+pl+'</span>';
+
+  return { chartOpts, summaryHtml };
+}
+
 var subChartState = { period:'day', type:'bar', showAvg:true, showHol:true };
 function setSubQuick(key){
   var r = getQuickRange(key);
@@ -4977,84 +5070,14 @@ function renderSubChart(){
   var data = aggregateRecords(recs, subChartState.period, fromVal, toVal);
   if(!data.length){ el.innerHTML='<div class="section-empty">ไม่มีข้อมูล</div>'; sumEl.innerHTML=''; return; }
   var TC = getThemeColors();
-  var total = data.reduce(function(a,d){return a+d.value;},0);
-  var avg = data.length ? total/data.length : 0;
-  var pl = subChartState.period==='day'?'วัน':subChartState.period==='month'?'เดือน':'ปี';
-  var avgWork = null, avgHol = null, nWork = 0, nHol = 0;
-  if(subChartState.period === 'day'){
-    var sumWork = 0, sumHol = 0;
-    data.forEach(function(d){
-      if(d.hol){ sumHol += d.value; nHol++; }
-      else { sumWork += d.value; nWork++; }
-    });
-    avgWork = nWork ? sumWork/nWork : 0;
-    avgHol  = nHol  ? sumHol/nHol  : 0;
-  }
-  var labels = data.map(function(d){return d.label;});
-  var chartType = subChartState.type==='bar' ? 'bar' : 'line';
-  var useHolSplit = subChartState.period==='day' && subChartState.showHol && chartType==='bar';
-  var series, chartColors, strokeW, strokeDash;
-  if(useHolSplit){
-    var workData = data.map(function(d){ return d.hol ? null : Math.round(d.value); });
-    var holData  = data.map(function(d){ return d.hol ? Math.round(d.value) : null; });
-    series = [
-      { name:''+UNIT_WORD+' (วันทำงาน)', data:workData, type:'bar' },
-      { name:''+UNIT_WORD+' (วันหยุด)',  data:holData,  type:'bar' }
-    ];
-    chartColors = [TC.green, TC.orange];
-    strokeW = [0,0]; strokeDash = [0,0];
-    if(subChartState.showAvg){
-      var avgRoundS = Math.round(avgWork);
-      series.push({ name:'ค่าเฉลี่ย', data:data.map(function(){return avgRoundS;}), type:'line' });
-      chartColors.push(TC.accent+'77'); strokeW.push(2); strokeDash.push(5);
-    }
-  } else {
-    var values = data.map(function(d){return Math.round(d.value);});
-    series = [{ name:UNIT_WORD+' ('+UNIT+'/'+pl+')', data:values, type:chartType }];
-    chartColors = [TC.green];
-    strokeW = chartType==='bar' ? [0] : [2.5]; strokeDash = [0];
-    if(subChartState.showAvg){
-      var avgRound = Math.round(subChartState.period==='day' ? avgWork : avg);
-      series.push({ name:'ค่าเฉลี่ย', data:data.map(function(){return avgRound;}), type:'line' });
-      chartColors.push(TC.accent+'77');
-      strokeW = chartType==='bar' ? [0,2] : [2.5,2]; strokeDash = [0,5];
-    }
-  }
-  var opts = {
-    chart:{ type:'bar', height:340, fontFamily:'IBM Plex Mono,monospace', foreColor:TC.text2,
-      stacked: useHolSplit,
-      toolbar:{ show:true, tools:{download:true,zoom:true,zoomin:true,zoomout:true,pan:true,reset:true} },
-      background:'transparent', animations:{enabled:true,speed:400} },
-    series: series,
-    xaxis:{ categories:labels, axisBorder:{color:TC.border}, axisTicks:{show:false}, labels:{rotate:0, rotateAlways:false, hideOverlappingLabels:true, trim:false, style:{fontSize:'10px',colors:TC.text3}} },
-    yaxis:{ labels:{style:{fontSize:'11px',colors:TC.text2}, formatter:function(v){return Math.round(v).toLocaleString();}}, axisBorder:{show:false} },
-    grid:{ borderColor:TC.border, strokeDashArray:3, xaxis:{lines:{show:false}}, yaxis:{lines:{show:true}} },
-    tooltip:{ theme:TC.isDark?'dark':'light', style:{fontSize:'12px'}, y:{formatter:function(v){return v!=null?Math.round(v).toLocaleString()+' '+UNIT:'—';}} },
-    colors: chartColors,
-    responsive:[{ breakpoint:640, options:{ chart:{height:300}, xaxis:{labels:{rotate:-45, rotateAlways:true, hideOverlappingLabels:true, style:{fontSize:'8px'}}}, plotOptions:{bar:{columnWidth:'80%'}} } }],
-    plotOptions:{ bar:{borderRadius:4,columnWidth:'70%'} },
-    stroke:{ width:strokeW, dashArray:strokeDash },
-    fill:{ opacity:chartType==='bar'?0.7:0.8 },
-    legend:{ show:series.length>1, fontSize:'11px', labels:{colors:TC.text2}, markers:{shape:'square',size:6} },
-    dataLabels:{ enabled:false },
-    states:{ hover:{filter:{type:'lighten',value:0.08}} }
-  };
+  var built = buildChartOpts(data, subChartState, TC);
   ensureApex().then(function(){
     safeDestroyChart(subChartInst);
     el.innerHTML = '';
-    subChartInst = new ApexCharts(el, opts);
+    subChartInst = new ApexCharts(el, built.chartOpts);
     subChartInst.render();
   }).catch(function(e){ el.innerHTML = '<div class="warn-box">❌ โหลดกราฟไม่ได้: '+(e&&e.message||'')+'</div>'; });
-  var avgChips;
-  if(subChartState.period === 'day' && (nWork || nHol)){
-    avgChips = '<span class="chip chip-green">เฉลี่ยวันทำงาน '+Math.round(avgWork).toLocaleString()+' '+UNIT+' ('+nWork+' วัน)</span> '+
-               '<span class="chip" style="background:rgba(251,146,60,.15);color:var(--orange);border:1px solid rgba(251,146,60,.4)">เฉลี่ยวันหยุด '+Math.round(avgHol).toLocaleString()+' '+UNIT+' ('+nHol+' วัน)</span>';
-  } else {
-    avgChips = '<span class="chip chip-green">เฉลี่ย '+Math.round(avg).toLocaleString()+' '+UNIT+'/'+pl+'</span>';
-  }
-  sumEl.innerHTML = '<span class="chip chip-green">'+UNIT_ICON+' รวม '+Math.round(total).toLocaleString()+' kWh</span> '+
-    avgChips + ' '+
-    '<span class="chip" style="background:var(--accent-dim);color:var(--accent);border:1px solid var(--accent-border)">'+data.length+' '+pl+'</span>';
+  sumEl.innerHTML = built.summaryHtml;
 }
 
 var g9State = { period:'day', sort:'default', showPct:false };
@@ -5462,90 +5485,15 @@ async function renderCmpChart(){
       });
     }
     if(!dataPoints.length){ el.innerHTML='<div class="section-empty">ไม่มีข้อมูล</div>'; return; }
-    var total = dataPoints.reduce(function(a,d){return a+d.value;},0);
-    var avg = dataPoints.length ? total/dataPoints.length : 0;
-    var pl = cmpState.period==='day'?'วัน':cmpState.period==='month'?'เดือน':'ปี';
-    var cmpAvgWork = 0, cmpAvgHol = 0, cmpNWork = 0, cmpNHol = 0;
-    if(cmpState.period === 'day'){
-      var cSumW = 0, cSumH = 0;
-      dataPoints.forEach(function(d){
-        if(d.hol){ cSumH += d.value; cmpNHol++; }
-        else { cSumW += d.value; cmpNWork++; }
-      });
-      cmpAvgWork = cmpNWork ? cSumW/cmpNWork : 0;
-      cmpAvgHol  = cmpNHol  ? cSumH/cmpNHol  : 0;
-    }
-    var values = dataPoints.map(function(d){return Math.round(d.value);});
-    var labels = dataPoints.map(function(d){return d.label;});
-    /* Same split as renderSubChart's "แยกสีวันหยุด": two series sharing one
-       axis, each with a null where the other day-type belongs. ApexCharts
-       renders that as a single bar per day, coloured by which series actually
-       has a value there — TC.green for a workday, TC.orange for a holiday.
-       Kept identical between the two charts on purpose, so the same toggle
-       means the same thing wherever it appears. */
-    var useHolSplit = cmpState.period==='day' && cmpState.showHol && cmpState.type==='bar';
-    var series, chartColors;
-    if(useHolSplit){
-      var workData = dataPoints.map(function(d){ return d.hol ? null : Math.round(d.value); });
-      var holData  = dataPoints.map(function(d){ return d.hol ? Math.round(d.value) : null; });
-      series = [
-        { name:UNIT_WORD+' (วันทำงาน)', data:workData },
-        { name:UNIT_WORD+' (วันหยุด)',  data:holData  }
-      ];
-      chartColors = [TC.green, TC.orange];
-    } else {
-      series = [{ name:UNIT_WORD+' ('+UNIT+'/'+pl+')', data:values }];
-      chartColors = [TC.accent];
-    }
-    var strokeW = cmpState.type==='bar' ? series.map(function(){return 0;}) : series.map(function(){return 2.5;});
-    var strokeDash = series.map(function(){return 0;});
-    if(cmpState.showAvg){
-      var cmpAvgLine = Math.round(cmpState.period === 'day' ? cmpAvgWork : avg);
-      series.push({ name:'ค่าเฉลี่ย', data:dataPoints.map(function(){return cmpAvgLine;}), type:'line' });
-      chartColors.push(TC.orange+'77');
-      strokeW.push(cmpState.type==='bar' ? 2 : 2); strokeDash.push(5);
-    }
-    var opts = {
-      chart:{ type:cmpState.type==='bar'?'bar':'line', height:340, fontFamily:'IBM Plex Mono,monospace', foreColor:TC.text2,
-        stacked: useHolSplit,
-        toolbar:{ show:true, tools:{download:true,zoom:true,zoomin:true,zoomout:true,pan:true,reset:true} },
-        background:'transparent', animations:{enabled:true,speed:400} },
-      series: series,
-      /* A month of daily bars is 31 labels in the width of a phone. Rather than
-         shrinking or rotating them into illegibility, only every Nth date is
-         drawn — the bars still show every day, the axis just stops trying to
-         name all of them. */
-      xaxis:{ categories:labels, axisBorder:{color:TC.border}, axisTicks:{show:false},
-              tickAmount: Math.min(labels.length, 8),
-              labels:{ rotate:0, rotateAlways:false, hideOverlappingLabels:true, trim:false,
-                       style:{fontSize:'11px',colors:TC.text2} } },
-      yaxis:{ title:{ text: UNIT, style:{fontSize:'12px', fontWeight:700, color:TC.text2} },
-              labels:{style:{fontSize:'12px',colors:TC.text2}, formatter:function(v){return Math.round(v).toLocaleString();}}, axisBorder:{show:false} },
-      grid:{ borderColor:TC.border, strokeDashArray:3, xaxis:{lines:{show:false}}, yaxis:{lines:{show:true}} },
-      tooltip:{ theme:TC.isDark?'dark':'light', style:{fontSize:'12px'}, y:{formatter:function(v){return v!=null?Math.round(v).toLocaleString()+' '+UNIT:'—';}} },
-      colors: chartColors,
-      responsive:[{ breakpoint:640, options:{ chart:{height:300}, xaxis:{labels:{rotate:-45, rotateAlways:true, hideOverlappingLabels:true, style:{fontSize:'8px'}}}, plotOptions:{bar:{columnWidth:'80%'}} } }],
-      plotOptions:{ bar:{borderRadius:4,columnWidth:'70%'} },
-      stroke:{ width:strokeW, dashArray:strokeDash },
-      fill:{ opacity:cmpState.type==='bar'?0.6:0.7 },
-      legend:{ fontSize:'11px', labels:{colors:TC.text2}, markers:{shape:'square',size:6} },
-      dataLabels:{ enabled:false },
-      states:{ hover:{filter:{type:'lighten',value:0.08}} }
-    };
+    var TC = getThemeColors();
+    var built = buildChartOpts(dataPoints, cmpState, TC);
     await ensureApex();
     if(thisReq !== cmpReqId) return;
     safeDestroyChart(cmpChartInst);
     el.innerHTML = '';
-    cmpChartInst = new ApexCharts(el, opts);
+    cmpChartInst = new ApexCharts(el, built.chartOpts);
     cmpChartInst.render();
-    var cmpAvgChips;
-    if(cmpState.period === 'day' && (cmpNWork || cmpNHol)){
-      cmpAvgChips = '<span class="chip chip-green">เฉลี่ยวันทำงาน '+Math.round(cmpAvgWork).toLocaleString()+' '+UNIT+' ('+cmpNWork+' วัน)</span> '+
-                    '<span class="chip" style="background:rgba(251,146,60,.15);color:var(--orange);border:1px solid rgba(251,146,60,.4)">เฉลี่ยวันหยุด '+Math.round(cmpAvgHol).toLocaleString()+' '+UNIT+' ('+cmpNHol+' วัน)</span>';
-    } else {
-      cmpAvgChips = '<span class="chip chip-green">เฉลี่ย '+Math.round(avg).toLocaleString()+' '+UNIT+'/'+pl+'</span>';
-    }
-    sumEl.innerHTML = '<span class="chip chip-green">'+UNIT_ICON+' รวม '+Math.round(total).toLocaleString()+' kWh</span> ' + cmpAvgChips;
+    sumEl.innerHTML = built.summaryHtml;
   }catch(e){ el.innerHTML='<div class="warn-box">❌ '+e.message+'</div>'; }
 }
 
