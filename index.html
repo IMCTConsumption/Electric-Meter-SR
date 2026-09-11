@@ -1981,7 +1981,6 @@ setInterval(checkSessionExpiry, 60000);
 /* ════════════ LOGIN ════════════ */
 function logout(){
   if(!confirm('ออกจากระบบและกลับไปหน้าเลือกโหมด?')) return;
-  stopSubChartAutoRefresh();
   if(sessionToken){
     const tokenToRevoke = sessionToken;
     apiPost({ action:'logout', token: tokenToRevoke }).catch(() => {});
@@ -2580,35 +2579,6 @@ async function refreshRecordsIncremental(){
   }catch(e){ /* apiPostAuthed already surfaced the error toast */ }
 }
 
-/* Auto-refresh, 15s — for demoing "record on the phone, watch it appear on
-   the screen" to someone who won't be pressing the manual button themselves.
-   This is intentionally NOT the default behaviour of the app: guarded so it
-   can only ever run while the chart tab is the visible panel (checked fresh
-   on every tick, not just at start — leaving the tab pauses it without
-   needing a separate stop call), never overlaps a fetch already in flight,
-   and is torn down on logout so it cannot keep polling with a revoked
-   session token. Uses the same incremental fetch as the manual button — a
-   15s poll that re-downloaded the full window every time would undo the
-   point of making that incremental in the first place. No spin/disable on
-   the button here: that's manual-click feedback, and flashing it every 15s
-   regardless of whether anything changed would just be visual noise. */
-let _subChartAutoRefreshTimer = null;
-let _subChartAutoRefreshBusy = false;
-function startSubChartAutoRefresh(){
-  if(_subChartAutoRefreshTimer) return;   // already running
-  _subChartAutoRefreshTimer = setInterval(async () => {
-    if(document.querySelector('.panel.active')?.id !== 'panel-chart') return;
-    if(!sessionToken || _subChartAutoRefreshBusy) return;
-    _subChartAutoRefreshBusy = true;
-    try{ await refreshRecordsIncremental(); renderSubChart(); }
-    catch(e){ /* silent — background poll, not a user action */ }
-    finally{ _subChartAutoRefreshBusy = false; }
-  }, 15000);
-}
-function stopSubChartAutoRefresh(){
-  if(_subChartAutoRefreshTimer){ clearInterval(_subChartAutoRefreshTimer); _subChartAutoRefreshTimer = null; }
-}
-
 function refreshSubChart(){
   // The per-meter chart reads from `records` (loaded once via
   // ensureAdminRecords), not summaryCache — clearing the summary cache would
@@ -2937,9 +2907,6 @@ function goTab(name){
        back with no ordering guarantee. Awaiting the first means the chart at
        the top of the screen is never left waiting behind one lower down. */
     (async () => { await renderCmpChart(); renderG9Chart(); })();
-    startSubChartAutoRefresh();
-  } else {
-    stopSubChartAutoRefresh();
   }
   if(name === 'qr')       { renderQR(); }
   if(name === 'settings') { renderSubList(); renderCalendarList(); }
