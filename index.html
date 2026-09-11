@@ -1410,7 +1410,9 @@ i svg{ width:1em; height:1em; display:inline-block; vertical-align:-0.12em; }
 
   <div class="panel" id="panel-chart">
     <div class="card">
-      <div class="card-title">กราฟเทียบการใช้ไฟฟ้าแต่ละกลุ่ม</div>
+      <div class="card-title">กราฟเทียบการใช้ไฟฟ้าแต่ละกลุ่ม
+        <button class="btn btn-ghost btn-sm" style="text-transform:none;letter-spacing:0;padding:3px 8px;min-height:auto" id="cmp-refresh-btn" onclick="refreshCmpChart()" title="ดึงข้อมูลล่าสุดจากเซิร์ฟเวอร์">🔄</button>
+      </div>
       <div class="f-row">
         <label class="f-label">🏭 เลือกโรง / กลุ่ม</label>
         <select class="f-input rd-select-hint" id="cmp-group" onchange="renderCmpChart()"></select>
@@ -1448,7 +1450,9 @@ i svg{ width:1em; height:1em; display:inline-block; vertical-align:-0.12em; }
   
 
         <div class="card">
-      <div class="card-title">เทียบการใช้ไฟฟ้ากลุ่มหลัก</div>
+      <div class="card-title">เทียบการใช้ไฟฟ้ากลุ่มหลัก
+        <button class="btn btn-ghost btn-sm" style="text-transform:none;letter-spacing:0;padding:3px 8px;min-height:auto" id="g9-refresh-btn" onclick="refreshG9Chart()" title="ดึงข้อมูลล่าสุดจากเซิร์ฟเวอร์">🔄</button>
+      </div>
       <div class="chart-ctrl">
         <span class="chart-ctrl-label">มุมมอง:</span>
         <button class="ctrl-btn green" id="g9-p-day" onclick="setG9Period('day')">รายวัน</button>
@@ -1476,7 +1480,9 @@ i svg{ width:1em; height:1em; display:inline-block; vertical-align:-0.12em; }
     </div>
 
     <div class="card">
-      <div class="card-title"><i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 14 3-4 3 3 4-6"/></svg></i> กราฟรายมิเตอร์</div>
+      <div class="card-title"><i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 14 3-4 3 3 4-6"/></svg></i> กราฟรายมิเตอร์
+        <button class="btn btn-ghost btn-sm" style="text-transform:none;letter-spacing:0;padding:3px 8px;min-height:auto" id="sub-refresh-btn" onclick="refreshSubChart()" title="ดึงข้อมูลล่าสุดจากเซิร์ฟเวอร์">🔄</button>
+      </div>
       <div class="f-row">
         <label class="f-label">เลือก Meter</label>
         <select class="f-input" id="chart-sub" onchange="renderSubChart()"><option value="">เลือก Sub...</option></select>
@@ -2517,6 +2523,44 @@ function invalidateSummaryCache(reason){
   const keys = Object.keys(summaryCache).length;
   summaryCache = {};
   console.log(`🗑 invalidateSummaryCache — ล้าง ${keys} keys, reason: ${reason||'ไม่ระบุ'}`);
+}
+
+/* Manual refresh for the three charts. There is no auto-refresh or polling —
+   a chart left open does not learn about a reading someone else just saved
+   on another device, because summaryCache (client) and the server's own
+   10-minute cache both stay put until something explicitly clears them.
+   Polling on a timer was considered and rejected: it would fire network
+   calls nobody asked for, on every open tab, whether or not anyone is
+   looking — the wrong trade given how much of this session went into making
+   the app NOT do unnecessary round trips. A button people press only when
+   they actually want to see whether anything changed costs nothing the rest
+   of the time. */
+async function _withRefreshSpin(btnId, fn){
+  const btn = document.getElementById(btnId);
+  if(btn){ btn.disabled = true; btn.style.animation = 'spin 0.8s linear infinite'; }
+  try { await fn(); }
+  finally { if(btn){ btn.disabled = false; btn.style.animation = ''; } }
+}
+function refreshCmpChart(){
+  return _withRefreshSpin('cmp-refresh-btn', async () => {
+    invalidateSummaryCache('manual-refresh:cmp');
+    await renderCmpChart();
+  });
+}
+function refreshG9Chart(){
+  return _withRefreshSpin('g9-refresh-btn', async () => {
+    invalidateSummaryCache('manual-refresh:g9');
+    await renderG9Chart();
+  });
+}
+function refreshSubChart(){
+  // The per-meter chart reads from `records` (loaded once via
+  // ensureAdminRecords), not summaryCache — clearing the summary cache would
+  // do nothing here. It needs the underlying record set re-fetched instead.
+  return _withRefreshSpin('sub-refresh-btn', async () => {
+    await loadAdminRecords();
+    renderSubChart();
+  });
 }
 
 function safeDestroyChart(inst){
@@ -5655,8 +5699,6 @@ setInterval(() => {
   else if (r > 200 && g > 100 && b < 100) dot.classList.add('working');
   else if (r > 200 && g < 100) dot.classList.add('err');
 }, 500);
-
-
 
 function onTabSummary(){ buildMonthOptions(); populateZoneReportSelect(); loadReport(); loadZoneReport(); }
 function onTabCost(){ buildCostMonthOptions(); loadTariffs().then(() => { renderTariffForms(); loadCostData(); }); }
