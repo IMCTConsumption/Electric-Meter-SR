@@ -2553,12 +2553,38 @@ function refreshG9Chart(){
     await renderG9Chart();
   });
 }
+/* Grows `records` by only the tail end, instead of re-fetching everything
+   the window already holds. A recorder can add hundreds of readings between
+   refreshes; re-downloading all of them every time someone just wants to see
+   whether anything moved wastes exactly the bandwidth/latency this session
+   spent a long time trying to cut. Re-uses the max date already in memory as
+   dateFrom (overlapping that one day is cheap and guarantees nothing on the
+   boundary is missed), then merges by id so an edited row on that boundary
+   day overwrites its old copy rather than duplicating.
+   Editing an OLDER row (outside this tail) is not something this can see —
+   that still needs "📚 โหลดข้อมูลทั้งหมด" on the Data tab, which does a full
+   reload on purpose. */
+async function refreshRecordsIncremental(){
+  if(!records.length){ await loadAdminRecords(); return; }   // no baseline yet — full load
+  let maxDate = records[0].date;
+  records.forEach(r => { if(r.date > maxDate) maxDate = r.date; });
+  try{
+    const res = await apiPostAuthed({ action:'getRawRecords', dateFrom: maxDate });
+    const byId = {};
+    records.forEach(r => { byId[r.id] = r; });
+    (res.records || []).forEach(r => { byId[r.id] = r; });   // new/edited rows win by id
+    records = computeUsed(Object.values(byId));
+    persist();
+    updateRecordWindowNotice();
+  }catch(e){ /* apiPostAuthed already surfaced the error toast */ }
+}
+
 function refreshSubChart(){
   // The per-meter chart reads from `records` (loaded once via
   // ensureAdminRecords), not summaryCache — clearing the summary cache would
   // do nothing here. It needs the underlying record set re-fetched instead.
   return _withRefreshSpin('sub-refresh-btn', async () => {
-    await loadAdminRecords();
+    await refreshRecordsIncremental();
     renderSubChart();
   });
 }
