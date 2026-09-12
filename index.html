@@ -1485,7 +1485,7 @@ i svg{ width:1em; height:1em; display:inline-block; vertical-align:-0.12em; }
       </div>
       <div class="f-row">
         <label class="f-label">เลือก Meter</label>
-        <select class="f-input" id="chart-sub" onchange="renderSubChart()"><option value="">เลือก Sub...</option></select>
+        <select class="f-input" id="chart-sub" onchange="onSubChartMeterChange()"><option value="">เลือก Sub...</option></select>
       </div>
       <div class="chart-ctrl">
         <span class="chart-ctrl-label">ช่วงเร็ว:</span>
@@ -1903,9 +1903,31 @@ function getLastKwh(meterId){
     .sort((a,b) => (`${b.date} ${b.time||'00:00'}`).localeCompare(`${a.date} ${a.time||'00:00'}`));
   return sorted.length ? parseFloat(sorted[0].kwh) || 0 : null;
 }
+/* Per-meter chart data store, keyed by meterId. Populated by
+   loadSubChartRecords() from the getMeterRecords action, which reads one
+   meter's rows from a small stable server cache instead of scanning the whole
+   sheet (getRawRecords). getSubRecs prefers this store when it holds the
+   requested meter, falling back to the global `records` array otherwise (e.g.
+   an admin who already loaded everything, or before the per-meter fetch
+   returns). Records here are run through computeUsed on arrival so `used`
+   carries the same zero-guard as everywhere else. */
+let subChartRecords = {};   // meterId -> computed records array
+
 function getSubRecs(meterId){
-  return records.filter(r => r.meterId === meterId)
-    .sort((a,b) => (`${a.date} ${a.time||'00:00'}`).localeCompare(`${b.date} ${b.time||'00:00'}`));
+  const src = (subChartRecords[meterId] || records).filter(r => r.meterId === meterId);
+  return src.sort((a,b) => (`${a.date} ${a.time||'00:00'}`).localeCompare(`${b.date} ${b.time||'00:00'}`));
+}
+
+/* Fetches one meter's records via the lightweight per-meter action and stores
+   the computed result. Returns the array. Used both on meter-select and by the
+   refresh button — the whole point is that this path never touches the
+   full-sheet getRawRecords. */
+async function loadSubChartRecords(meterId){
+  if(!meterId) return [];
+  const res = await apiPostAuthed({ action:'getMeterRecords', meterId });
+  const raw = (res && res.records) || [];
+  subChartRecords[meterId] = computeUsed(raw);
+  return subChartRecords[meterId];
 }
 
 /* ════════════ SESSION PERSISTENCE ════════════ */
@@ -2591,12 +2613,29 @@ async function refreshRecordsIncremental(){
   }catch(e){ /* apiPostAuthed already surfaced the error toast */ }
 }
 
+/* Meter-select handler for the per-meter chart. Fetches that meter's rows via
+   the lightweight action, then renders. Shows a loading state on the chart
+   element while the fetch is in flight so it doesn't look frozen. */
+async function onSubChartMeterChange(){
+  var meterId = document.getElementById('chart-sub').value;
+  var el = document.getElementById('sub-chart-el');
+  if(!meterId){ renderSubChart(); return; }
+  if(el && !subChartRecords[meterId]) el.innerHTML = '<div class="section-empty">กำลังโหลด...</div>';
+  try { await loadSubChartRecords(meterId); }
+  catch(e){ /* fall back to whatever getSubRecs can find in global records */ }
+  renderSubChart();
+}
+
 function refreshSubChart(){
-  // The per-meter chart reads from `records` (loaded once via
-  // ensureAdminRecords), not summaryCache — clearing the summary cache would
-  // do nothing here. It needs the underlying record set re-fetched instead.
+  // Per-meter refresh now goes through the lightweight getMeterRecords action
+  // (one meter, small stable cache) instead of getRawRecords (full sheet).
+  // Re-fetches the currently selected meter only.
   return _withRefreshSpin('sub-refresh-btn', async () => {
-    await refreshRecordsIncremental();
+    var meterId = document.getElementById('chart-sub').value;
+    if(meterId){
+      try { await loadSubChartRecords(meterId); }
+      catch(e){ /* apiPostAuthed already surfaced the error toast */ }
+    }
     renderSubChart();
   });
 }
@@ -2899,6 +2938,13 @@ function renderAll(){
    network cost and nothing happens when no chart is on screen. */
 function refreshSubChartIfVisible(){
   if(typeof subChartInst !== 'undefined' && subChartInst){
+    /* A local mutation (add/edit/delete) already updated the global `records`
+       array, but the per-meter chart now prefers subChartRecords, which would
+       otherwise still hold the pre-mutation copy and mask the change. Clearing
+       it forces getSubRecs to fall back to the freshly-updated global records
+       for this redraw — the phantom-bar-after-delete case. The next explicit
+       meter-select or refresh re-populates the store from the server. */
+    subChartRecords = {};
     try { renderSubChart(); } catch(e){ /* chart redraw is best-effort */ }
   }
 }
