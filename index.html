@@ -2570,9 +2570,21 @@ async function refreshRecordsIncremental(){
   records.forEach(r => { if(r.date > maxDate) maxDate = r.date; });
   try{
     const res = await apiPostAuthed({ action:'getRawRecords', dateFrom: maxDate });
+    const server = res.records || [];
+    /* The server returns EVERY record on or after maxDate — so within that
+       window the server's list is the complete truth, not just additions.
+       A plain merge-by-id (keep every local row, overwrite/add from server)
+       silently misses deletions: a row deleted on another device is absent
+       from the server response, but a merge that only ever adds or updates
+       never removes it, leaving a phantom bar on the chart that the Data
+       tab (which fully reloads) doesn't show. So: keep local rows OLDER than
+       maxDate untouched (outside the refreshed window), and for the window
+       itself take the server's set verbatim — new rows appear, edits apply,
+       and deletions actually disappear. */
+    const older = records.filter(r => r.date < maxDate);
     const byId = {};
-    records.forEach(r => { byId[r.id] = r; });
-    (res.records || []).forEach(r => { byId[r.id] = r; });   // new/edited rows win by id
+    older.forEach(r => { byId[r.id] = r; });
+    server.forEach(r => { byId[r.id] = r; });
     records = computeUsed(Object.values(byId));
     persist();
     updateRecordWindowNotice();
@@ -2863,6 +2875,7 @@ function renderAll(){
   if(!DEBUG_PERF){
     renderZoneAreas(); renderData(); renderStats(); populateDDs(); updateBadge();
     if(activeSub){ updateMeterSummary(); renderRecent(); }
+    refreshSubChartIfVisible();
     return;
   }
   const seg = (name, fn) => { const l=perfLabel('renderAll:'+name); perfStart(l); fn(); perfEnd(l); };
@@ -2873,7 +2886,21 @@ function renderAll(){
   seg('populateDDs', populateDDs);
   seg('updateBadge', updateBadge);
   if(activeSub){ seg('meterSummary', updateMeterSummary); seg('recent', renderRecent); }
+  seg('subChart', refreshSubChartIfVisible);
   console.log(`⏱ renderAll TOTAL: ${(performance.now()-_t0).toFixed(2)} ms`);
+}
+
+/* After any local mutation of `records` (edit, delete, an add that merged in),
+   the per-meter chart must be redrawn from the new array — the Data table was
+   already being re-rendered by renderData(), but the chart was not, so a
+   deleted row vanished from the table while its bar stayed on the chart. Only
+   redraws when a chart instance already exists (the chart tab has been opened
+   this session); it reads purely from the in-memory `records`, so there is no
+   network cost and nothing happens when no chart is on screen. */
+function refreshSubChartIfVisible(){
+  if(typeof subChartInst !== 'undefined' && subChartInst){
+    try { renderSubChart(); } catch(e){ /* chart redraw is best-effort */ }
+  }
 }
 
 const TAB_ORDER = ["entry","data","chart","summary","cost","qr","settings"];
@@ -2899,14 +2926,22 @@ function goTab(name){
   if(tabEl) tabEl.classList.add('active');
   if(name === 'data')     { ensureAdminRecords(); renderData(); renderStats(); updateRecordWindowNotice(); }
   if(name === 'chart'){
-    ensureAdminRecords(); populateDDs(); setSubQuick('30d'); buildCompareGroupOptions(); initG9Pickers(); initCmpPickers();
-    /* The card the person sees first — "กราฟเทียบการใช้ไฟฟ้าแต่ละกลุ่ม" — is
-       rendered to completion before the second chart even starts. Both used to
-       fire together; they hit getSummaryCached with different date ranges (so
-       different cache keys), meaning two heavy summary requests queued back to
-       back with no ordering guarantee. Awaiting the first means the chart at
-       the top of the screen is never left waiting behind one lower down. */
-    (async () => { await renderCmpChart(); renderG9Chart(); })();
+    /* ensureAdminRecords() must be awaited before the chart renders — it was
+       previously fired without await, so on a slow/cold backend response
+       renderSubChart() (called synchronously via setSubQuick below) would
+       run while `records` was still empty, showing "ไม่มีข้อมูลในช่วงที่เลือก"
+       even though the data existed and was simply still in flight. */
+    (async () => {
+      await ensureAdminRecords();
+      populateDDs(); setSubQuick('30d'); buildCompareGroupOptions(); initG9Pickers(); initCmpPickers();
+      /* The card the person sees first — "กราฟเทียบการใช้ไฟฟ้าแต่ละกลุ่ม" — is
+         rendered to completion before the second chart even starts. Both used to
+         fire together; they hit getSummaryCached with different date ranges (so
+         different cache keys), meaning two heavy summary requests queued back to
+         back with no ordering guarantee. Awaiting the first means the chart at
+         the top of the screen is never left waiting behind one lower down. */
+      await renderCmpChart(); renderG9Chart();
+    })();
   }
   if(name === 'qr')       { renderQR(); }
   if(name === 'settings') { renderSubList(); renderCalendarList(); }
