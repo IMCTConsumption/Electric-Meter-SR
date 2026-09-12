@@ -2972,13 +2972,17 @@ function goTab(name){
   if(tabEl) tabEl.classList.add('active');
   if(name === 'data')     { ensureAdminRecords(); renderData(); renderStats(); updateRecordWindowNotice(); }
   if(name === 'chart'){
-    /* ensureAdminRecords() must be awaited before the chart renders — it was
-       previously fired without await, so on a slow/cold backend response
-       renderSubChart() (called synchronously via setSubQuick below) would
-       run while `records` was still empty, showing "ไม่มีข้อมูลในช่วงที่เลือก"
-       even though the data existed and was simply still in flight. */
+    /* The chart tab no longer pulls the full record set (ensureAdminRecords /
+       getRawRecords, thousands of rows). Nothing here needs it anymore:
+       - the two group charts read server-side summaries (getSummaryCached),
+       - the per-meter chart fetches one meter at a time (getMeterRecords),
+       - the only remaining use was picker defaults in initG9Pickers, which
+         already prefer the lightweight availableMonths list.
+       So we fetch just that light month list instead. This removes a heavy,
+       fully redundant full-sheet read from every chart-tab open. (The Data
+       tab still calls ensureAdminRecords on its own, unchanged.) */
     (async () => {
-      await ensureAdminRecords();
+      if(appMode === 'admin' && !availableMonths) await loadAvailableMonths();
       populateDDs(); setSubQuick('30d'); buildCompareGroupOptions(); initG9Pickers(); initCmpPickers();
       /* The card the person sees first — "กราฟเทียบการใช้ไฟฟ้าแต่ละกลุ่ม" — is
          rendered to completion before the second chart even starts. Both used to
