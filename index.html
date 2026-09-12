@@ -1914,8 +1914,17 @@ function getLastKwh(meterId){
 let subChartRecords = {};   // meterId -> computed records array
 
 function getSubRecs(meterId){
-  const src = (subChartRecords[meterId] || records).filter(r => r.meterId === meterId);
-  return src.sort((a,b) => (`${a.date} ${a.time||'00:00'}`).localeCompare(`${b.date} ${b.time||'00:00'}`));
+  const cached = subChartRecords[meterId];
+  if(cached){
+    // Already sorted by _getMeterRecordChain server-side (and computeUsed
+    // preserves order), so no re-sort here — this is the normal chart path.
+    return cached.filter(r => r.meterId === meterId);
+  }
+  // Fallback to the global records array (e.g. before the per-meter fetch
+  // returns, or an admin who loaded everything). That array is NOT guaranteed
+  // sorted, so it still needs sorting.
+  return records.filter(r => r.meterId === meterId)
+    .sort((a,b) => (`${a.date} ${a.time||'00:00'}`).localeCompare(`${b.date} ${b.time||'00:00'}`));
 }
 
 /* Fetches one meter's records via the lightweight per-meter action and stores
@@ -2624,6 +2633,31 @@ async function onSubChartMeterChange(){
   try { await loadSubChartRecords(meterId); }
   catch(e){ /* fall back to whatever getSubRecs can find in global records */ }
   renderSubChart();
+  preloadAdjacentMeter(meterId);
+}
+
+/* Warms the cache for the NEXT meter in the dropdown, so stepping through
+   meters one by one feels instant after the first. Deliberately conservative
+   to honour "don't fetch more than necessary": only the single next meter,
+   only if not already cached, and only when the browser is idle (so it never
+   competes with the current chart's own load or anything the user actually
+   triggered). If requestIdleCallback isn't available it just skips —
+   preloading is a nicety, not required for correctness. */
+function preloadAdjacentMeter(currentMeterId){
+  if(typeof requestIdleCallback !== 'function') return;
+  var sel = document.getElementById('chart-sub');
+  if(!sel) return;
+  var opts = Array.prototype.slice.call(sel.options).map(function(o){ return o.value; }).filter(Boolean);
+  var idx = opts.indexOf(currentMeterId);
+  if(idx < 0 || idx + 1 >= opts.length) return;   // no next meter
+  var nextId = opts[idx + 1];
+  if(subChartRecords[nextId]) return;              // already warm
+  requestIdleCallback(function(){
+    // Re-check: the user may have changed meters since this was queued.
+    if(!subChartRecords[nextId]){
+      loadSubChartRecords(nextId).catch(function(){ /* preload is best-effort */ });
+    }
+  }, { timeout: 3000 });
 }
 
 function refreshSubChart(){
@@ -2945,6 +2979,8 @@ function refreshSubChartIfVisible(){
        for this redraw — the phantom-bar-after-delete case. The next explicit
        meter-select or refresh re-populates the store from the server. */
     subChartRecords = {};
+    _aggCache = {};   // records changed — drop cached aggregates so they recompute
+    _subChartStructKey = null;   // force a clean rebuild after a mutation
     try { renderSubChart(); } catch(e){ /* chart redraw is best-effort */ }
   }
 }
@@ -4926,6 +4962,7 @@ function renderCost(month){
    APEXCHARTS SYSTEM
    ════════════════════════════════════════════════════════════ */
 let subChartInst = null;
+let _subChartStructKey = null;   // 'type:seriesCount' of the live chart, for safe updateOptions reuse
 let g9ChartInst = null;
 let cmpChartInst = null;
 
@@ -4953,6 +4990,26 @@ function getQuickRange(key){
   if(key==='lastM'){ var f=new Date(t.getFullYear(),t.getMonth()-1,1); var l=new Date(t.getFullYear(),t.getMonth(),0); return [fmt(f),fmt(l)]; }
   if(key==='3m'){ var f=new Date(t);f.setMonth(f.getMonth()-2);f.setDate(1); return [fmt(f),today]; }
   return ['',''];
+}
+
+/* Cache for aggregateRecords keyed by meter+period+range+data-signature.
+   Switching bar<->line or toggling avg/holiday re-renders the chart but does
+   NOT change the aggregated buckets, so recomputing them on every toggle was
+   wasted work. The signature (count + last id + last kwh) changes whenever the
+   underlying records do (refresh, edit, delete), so a stale aggregate is never
+   served after the data moves. Cleared wholesale when records are reloaded. */
+let _aggCache = {};
+function _aggSignature(recs){
+  if(!recs.length) return '0';
+  const last = recs[recs.length - 1];
+  return recs.length + ':' + (last.id || '') + ':' + (last.kwh || '');
+}
+function aggregateRecordsCached(recs, period, dateFrom, dateTo, meterId){
+  const key = meterId + '|' + period + '|' + dateFrom + '|' + dateTo + '|' + _aggSignature(recs);
+  if(_aggCache[key]) return _aggCache[key];
+  const out = aggregateRecords(recs, period, dateFrom, dateTo);
+  _aggCache[key] = out;
+  return out;
 }
 
 function aggregateRecords(recs, period, dateFrom, dateTo){
@@ -5152,15 +5209,37 @@ function renderSubChart(){
   if(fromVal) recs = recs.filter(function(r){return r.date >= fromVal;});
   if(toVal) recs = recs.filter(function(r){return r.date <= toVal;});
   if(!recs.length){ el.innerHTML='<div class="section-empty">ไม่มีข้อมูลในช่วงที่เลือก</div>'; sumEl.innerHTML=''; return; }
-  var data = aggregateRecords(recs, subChartState.period, fromVal, toVal);
+  var data = aggregateRecordsCached(recs, subChartState.period, fromVal, toVal, meterId);
   if(!data.length){ el.innerHTML='<div class="section-empty">ไม่มีข้อมูล</div>'; sumEl.innerHTML=''; return; }
   var TC = getThemeColors();
   var built = buildChartOpts(data, subChartState, TC);
   ensureApex().then(function(){
-    safeDestroyChart(subChartInst);
-    el.innerHTML = '';
-    subChartInst = new ApexCharts(el, built.chartOpts);
-    subChartInst.render();
+    /* Reuse the existing chart instance via updateOptions when the structure
+       is unchanged — far smoother and cheaper than destroy+new+render on every
+       date-range tweak or refresh. But updateOptions cannot safely morph across
+       a chart-type change (bar<->line) or a series-count change (holiday split
+       on/off produces 1 vs 2 data series): ApexCharts leaves stale paths/state
+       behind. So we fingerprint those two structural traits and only reuse when
+       they match; otherwise fall back to a clean rebuild. The element must also
+       still belong to the current instance (not have been blanked out). */
+    var structKey = (built.chartOpts.chart.type) + ':' + built.chartOpts.series.length;
+    var canReuse = subChartInst && _subChartStructKey === structKey && el.querySelector('.apexcharts-canvas');
+    if(canReuse){
+      subChartInst.updateOptions({
+        series: built.chartOpts.series,
+        xaxis:  built.chartOpts.xaxis,
+        yaxis:  built.chartOpts.yaxis,
+        colors: built.chartOpts.colors,
+        stroke: built.chartOpts.stroke,
+        fill:   built.chartOpts.fill
+      }, false, true);   // (options, redrawPaths=false, animate=true)
+    } else {
+      safeDestroyChart(subChartInst);
+      el.innerHTML = '';
+      subChartInst = new ApexCharts(el, built.chartOpts);
+      subChartInst.render();
+      _subChartStructKey = structKey;
+    }
   }).catch(function(e){ el.innerHTML = '<div class="warn-box">❌ โหลดกราฟไม่ได้: '+(e&&e.message||'')+'</div>'; });
   sumEl.innerHTML = built.summaryHtml;
 }
