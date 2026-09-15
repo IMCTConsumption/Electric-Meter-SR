@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>⚡ ระบบจดบันทึกมิเตอร์ไฟฟ้า Electric Meter SR Plant</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;700&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sarabun:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
 
 /* ═══════════════════════════════════════════════════════════
@@ -72,8 +73,8 @@
   --rd-shadow-lg:    0 12px 32px rgba(0,0,0,.45);
 }
 
-/* Preload webfonts (light — Inter + Mono + Sarabun) */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&family=Sarabun:wght@400;500;600&display=swap');
+/* Fonts are loaded via a single <link> in <head> (see the comment there) —
+   no @import here, which would serialise the fetch behind this stylesheet. */
 
 /* ─── New header ─── */
 .rd-header {
@@ -699,7 +700,7 @@
 
 
 :root {
-  --font-body:'IBM Plex Sans Thai',sans-serif;
+  --font-body:'Sarabun','IBM Plex Sans Thai',sans-serif;
   --font-mono:'IBM Plex Mono',monospace;
   --r-sm:8px;--r-md:12px;--r-lg:16px;--r-xl:20px;
   --shadow-sm:0 1px 3px rgba(0,0,0,.12);
@@ -918,6 +919,36 @@ tr:hover td{background:var(--surface-2)}
 i svg{ width:1em; height:1em; display:inline-block; vertical-align:-0.12em; }
 .modal-head i svg,.card-title i svg{ width:18px; height:18px; vertical-align:-3px; margin-right:2px; }
 .chart-ctrl{display:flex;gap:6px;flex-wrap:wrap;padding:8px 10px;background:var(--surface-2);border-radius:10px;border:1px solid var(--border);margin-bottom:8px;align-items:center}
+/* Collapsible filter block — keeps the row of range/period/type buttons from
+   eating the vertical space the chart itself needs. Closed by default so the
+   chart is visible immediately on tab open; the defaults (this month, daily,
+   bar) are almost always what someone wants, so most people never open it. */
+.chart-filters{margin-bottom:8px;border:1px solid var(--border);border-radius:10px;background:var(--surface-2);overflow:hidden}
+.chart-filters>summary{cursor:pointer;list-style:none;padding:9px 12px;font-size:12px;font-weight:700;color:var(--accent);display:flex;align-items:center;gap:8px;user-select:none}
+.chart-filters>summary::-webkit-details-marker{display:none}
+.chart-filters>summary::before{content:'▸';font-size:11px;transition:transform .15s;color:var(--text-3)}
+.chart-filters[open]>summary::before{transform:rotate(90deg)}
+.chart-filters>summary:hover{background:var(--surface-1)}
+.chart-filters .chart-ctrl{margin:0 8px 8px;background:var(--surface-1)}
+.chart-filters .chart-ctrl:first-of-type{margin-top:4px}
+/* Chart subtitle — one line under the card title explaining what the chart
+   shows, so a viewer isn't left guessing how the three charts differ. */
+.chart-desc{font-size:12px;color:var(--text-3);margin:-2px 0 12px;line-height:1.4}
+/* Searchable picker — an <input> backed by a <datalist>, so the native
+   browser control does the filtering (type "PT" → only PT groups show) with
+   zero custom dropdown JS. Looks like the other f-inputs; the resolved key is
+   applied on change. */
+.rd-search-wrap{position:relative;display:flex;align-items:center}
+.rd-search-wrap>i{position:absolute;left:12px;color:var(--text-3);font-size:16px;pointer-events:none}
+.rd-search-input{width:100%;padding:11px 12px 11px 36px;background:var(--surface-2);border:1px solid var(--accent-border);border-radius:10px;color:var(--text-1);font-size:14px;font-family:inherit}
+.rd-search-input:focus{outline:none;border-color:var(--accent)}
+/* Segmented control — the range presets as one connected bar with the active
+   segment filled, the enterprise-dashboard pattern (Power BI/Grafana). One tap
+   switches range; all options visible at once. */
+.rd-segment{display:flex;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:3px;gap:2px;margin-bottom:8px}
+.rd-segment button{flex:1;border:none;background:transparent;color:var(--text-2);font-size:13px;font-family:inherit;padding:8px 4px;border-radius:7px;cursor:pointer;transition:background .12s,color .12s;white-space:nowrap}
+.rd-segment button:hover{color:var(--text-1)}
+.rd-segment button.on{background:var(--accent);color:var(--bg);font-weight:700}
 .chart-ctrl-label{font-size:11px;color:var(--text-3);margin-right:4px;white-space:nowrap}
 .ctrl-btn{padding:6px 11px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--text-3);transition:all .15s;white-space:nowrap;font-family:var(--font-body)}
 .ctrl-btn:hover{border-color:var(--border-hi);color:var(--text-2)}
@@ -930,6 +961,23 @@ i svg{ width:1em; height:1em; display:inline-block; vertical-align:-0.12em; }
 .ctrl-nav{width:28px;height:28px;border-radius:8px;border:1px solid var(--border);background:var(--surface-1);color:var(--text-1);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:12px}
 .ctrl-nav:hover{background:var(--surface-3)}
 .chart-container{min-height:320px;position:relative}
+/* Skeleton loader — shown while a chart's data is being fetched, instead of a
+   bare "กำลังโหลด..." line or an empty box that makes the app feel stalled.
+   Faint animated bars of varying height read instantly as "a chart is coming",
+   which is the perceived-speed trick real dashboards use: the wait feels
+   shorter when the shape of the result is already on screen. Pure CSS, no JS,
+   no layout shift when the real chart replaces it (same min-height). */
+.chart-skeleton{min-height:320px;display:flex;align-items:flex-end;justify-content:space-around;gap:6px;padding:24px 12px 40px}
+.chart-skeleton .sk-bar{flex:1;border-radius:4px 4px 0 0;background:linear-gradient(180deg,var(--surface-2),var(--surface-1));animation:sk-pulse 1.2s ease-in-out infinite}
+.chart-skeleton .sk-bar:nth-child(1){height:55%;animation-delay:0s}
+.chart-skeleton .sk-bar:nth-child(2){height:80%;animation-delay:.1s}
+.chart-skeleton .sk-bar:nth-child(3){height:40%;animation-delay:.2s}
+.chart-skeleton .sk-bar:nth-child(4){height:70%;animation-delay:.3s}
+.chart-skeleton .sk-bar:nth-child(5){height:90%;animation-delay:.4s}
+.chart-skeleton .sk-bar:nth-child(6){height:50%;animation-delay:.5s}
+.chart-skeleton .sk-bar:nth-child(7){height:65%;animation-delay:.6s}
+.chart-skeleton .sk-bar:nth-child(8){height:35%;animation-delay:.7s}
+@keyframes sk-pulse{0%,100%{opacity:.35}50%{opacity:.7}}
 .apexcharts-tooltip{font-family:var(--font-mono)!important;font-size:12px!important}
 .apexcharts-menu{background:var(--surface-2)!important;border-color:var(--border)!important}
 .apexcharts-menu-item:hover{background:var(--surface-3)!important}
@@ -1413,10 +1461,22 @@ i svg{ width:1em; height:1em; display:inline-block; vertical-align:-0.12em; }
       <div class="card-title">กราฟเทียบการใช้ไฟฟ้าแต่ละกลุ่ม
         <button class="btn btn-ghost btn-sm" style="text-transform:none;letter-spacing:0;padding:3px 8px;min-height:auto" id="cmp-refresh-btn" onclick="refreshCmpChart()" title="ดึงข้อมูลล่าสุดจากเซิร์ฟเวอร์">🔄</button>
       </div>
+      <div class="chart-desc">ภาพรวมการใช้พลังงานของแต่ละกลุ่ม เทียบตามช่วงเวลา</div>
       <div class="f-row">
         <label class="f-label">🏭 เลือกโรง / กลุ่ม</label>
-        <select class="f-input rd-select-hint" id="cmp-group" onchange="renderCmpChart()"></select>
+        <div class="rd-search-wrap">
+          <i class="ti ti-search" aria-hidden="true">🔍</i>
+          <input class="rd-search-input" id="cmp-group-search" list="cmp-group-list" placeholder="พิมพ์ค้นหากลุ่ม เช่น PT7..." autocomplete="off" oninput="onCmpGroupSearch()">
+          <datalist id="cmp-group-list"></datalist>
+        </div>
+        <select class="f-input rd-select-hint" id="cmp-group" onchange="renderCmpChart()" style="display:none"></select>
       </div>
+      <div class="rd-segment" id="cmp-segment">
+        <button data-range="thisM" onclick="setCmpQuickSeg('thisM')">เดือนนี้</button>
+        <button data-range="lastM" onclick="setCmpQuickSeg('lastM')">เดือนก่อน</button>
+        <button data-range="3m" onclick="setCmpQuickSeg('3m')">3 เดือน</button>
+      </div>
+      <details class="chart-filters"><summary>ตัวกรอง (ช่วงวัน · มุมมอง · รูปแบบ)</summary>
       <div class="chart-ctrl">
         <span class="chart-ctrl-label">ช่วงเร็ว:</span>
         <button class="ctrl-btn yellow" onclick="setCmpQuick('7d')">7 วัน</button>
@@ -1424,13 +1484,12 @@ i svg{ width:1em; height:1em; display:inline-block; vertical-align:-0.12em; }
         <button class="ctrl-btn yellow" onclick="setCmpQuick('thisM')">เดือนนี้</button>
         <button class="ctrl-btn yellow" onclick="setCmpQuick('lastM')">เดือนก่อน</button>
         <button class="ctrl-btn yellow" onclick="setCmpQuick('3m')">3 เดือน</button>
-        <button class="ctrl-btn yellow" onclick="setCmpQuick('all')">ทั้งหมด</button>
       </div>
       <div class="chart-ctrl">
         <span class="chart-ctrl-label">จาก:</span>
-        <input class="ctrl-date" type="date" id="cmp-from" onchange="renderCmpChart()">
+        <input class="ctrl-date" type="date" id="cmp-from" onchange="renderCmpChartDebounced()">
         <span class="chart-ctrl-label">ถึง:</span>
-        <input class="ctrl-date" type="date" id="cmp-to" onchange="renderCmpChart()">
+        <input class="ctrl-date" type="date" id="cmp-to" onchange="renderCmpChartDebounced()">
       </div>
       <div class="chart-ctrl">
         <span class="chart-ctrl-label">มุมมอง:</span>
@@ -1444,6 +1503,7 @@ i svg{ width:1em; height:1em; display:inline-block; vertical-align:-0.12em; }
         <button class="ctrl-btn green" id="cmp-t-bar" onclick="setCmpType('bar')">แท่ง</button>
         <button class="ctrl-btn" id="cmp-t-line" onclick="setCmpType('line')">เส้น</button>
       </div>
+      </details>
       <div class="chart-container" id="cmp-chart-el"></div>
       <div id="cmp-chart-summary" style="margin-top:8px"></div>
     </div>
@@ -1453,6 +1513,7 @@ i svg{ width:1em; height:1em; display:inline-block; vertical-align:-0.12em; }
       <div class="card-title">เทียบการใช้ไฟฟ้ากลุ่มหลัก
         <button class="btn btn-ghost btn-sm" style="text-transform:none;letter-spacing:0;padding:3px 8px;min-height:auto" id="g9-refresh-btn" onclick="refreshG9Chart()" title="ดึงข้อมูลล่าสุดจากเซิร์ฟเวอร์">🔄</button>
       </div>
+      <details class="chart-filters"><summary>ตัวกรอง (มุมมอง · ช่วง · เรียง)</summary>
       <div class="chart-ctrl">
         <span class="chart-ctrl-label">มุมมอง:</span>
         <button class="ctrl-btn green" id="g9-p-day" onclick="setG9Period('day')">รายวัน</button>
@@ -1461,9 +1522,9 @@ i svg{ width:1em; height:1em; display:inline-block; vertical-align:-0.12em; }
       </div>
       <div class="chart-ctrl">
         <button class="ctrl-nav" onclick="navG9(-1)">◀</button>
-        <input class="ctrl-date" type="date" id="g9-date" onchange="renderG9Chart()">
-        <input class="ctrl-date" type="month" id="g9-month" onchange="renderG9Chart()" style="display:none">
-        <select class="ctrl-date" id="g9-year" onchange="renderG9Chart()" style="display:none"></select>
+        <input class="ctrl-date" type="date" id="g9-date" onchange="renderG9ChartDebounced()">
+        <input class="ctrl-date" type="month" id="g9-month" onchange="renderG9ChartDebounced()" style="display:none">
+        <select class="ctrl-date" id="g9-year" onchange="renderG9ChartDebounced()" style="display:none"></select>
         <button class="ctrl-nav" onclick="navG9(1)">▶</button>
         <span style="font-size:11px;color:var(--accent);font-weight:700" id="g9-label"></span>
       </div>
@@ -1475,6 +1536,7 @@ i svg{ width:1em; height:1em; display:inline-block; vertical-align:-0.12em; }
         <div class="ctrl-sep"></div>
         <button class="ctrl-btn" id="g9-pct" onclick="toggleG9Pct()">แสดง %</button>
       </div>
+      </details>
       <div class="chart-container" id="g9-chart-el"></div>
       <div id="g9-chart-summary" style="margin-top:8px"></div>
     </div>
@@ -1483,10 +1545,22 @@ i svg{ width:1em; height:1em; display:inline-block; vertical-align:-0.12em; }
       <div class="card-title"><i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 14 3-4 3 3 4-6"/></svg></i> กราฟรายมิเตอร์
         <button class="btn btn-ghost btn-sm" style="text-transform:none;letter-spacing:0;padding:3px 8px;min-height:auto" id="sub-refresh-btn" onclick="refreshSubChart()" title="ดึงข้อมูลล่าสุดจากเซิร์ฟเวอร์">🔄</button>
       </div>
+      <div class="chart-desc">เจาะจงมิเตอร์ตัวเดียว ดูการใช้ตามช่วงเวลา</div>
       <div class="f-row">
-        <label class="f-label">เลือก Meter</label>
-        <select class="f-input" id="chart-sub" onchange="onSubChartMeterChange()"><option value="">เลือก Sub...</option></select>
+        <label class="f-label">🔌 เลือกมิเตอร์</label>
+        <div class="rd-search-wrap">
+          <i class="ti ti-search" aria-hidden="true">🔍</i>
+          <input class="rd-search-input" id="chart-sub-search" list="chart-sub-list" placeholder="พิมพ์ค้นหามิเตอร์ เช่น SUB-05..." autocomplete="off" oninput="onSubSearch()">
+          <datalist id="chart-sub-list"></datalist>
+        </div>
+        <select class="f-input" id="chart-sub" onchange="onSubChartMeterChange()" style="display:none"><option value="">เลือก Sub...</option></select>
       </div>
+      <div class="rd-segment" id="sub-segment">
+        <button data-range="thisM" onclick="setSubQuickSeg('thisM')">เดือนนี้</button>
+        <button data-range="lastM" onclick="setSubQuickSeg('lastM')">เดือนก่อน</button>
+        <button data-range="3m" onclick="setSubQuickSeg('3m')">3 เดือน</button>
+      </div>
+      <details class="chart-filters"><summary>ตัวกรอง (ช่วงวัน · มุมมอง · รูปแบบ)</summary>
       <div class="chart-ctrl">
         <span class="chart-ctrl-label">ช่วงเร็ว:</span>
         <button class="ctrl-btn yellow" onclick="setSubQuick('7d')">7 วัน</button>
@@ -1494,7 +1568,6 @@ i svg{ width:1em; height:1em; display:inline-block; vertical-align:-0.12em; }
         <button class="ctrl-btn yellow" onclick="setSubQuick('thisM')">เดือนนี้</button>
         <button class="ctrl-btn yellow" onclick="setSubQuick('lastM')">เดือนก่อน</button>
         <button class="ctrl-btn yellow" onclick="setSubQuick('3m')">3 เดือน</button>
-        <button class="ctrl-btn yellow" onclick="setSubQuick('all')">ทั้งหมด</button>
       </div>
       <div class="chart-ctrl">
         <span class="chart-ctrl-label">จาก:</span>
@@ -1514,6 +1587,7 @@ i svg{ width:1em; height:1em; display:inline-block; vertical-align:-0.12em; }
         <button class="ctrl-btn green" id="sub-t-bar" onclick="setSubType('bar')">แท่ง</button>
         <button class="ctrl-btn" id="sub-t-line" onclick="setSubType('line')">เส้น</button>
       </div>
+      </details>
       <div class="chart-container" id="sub-chart-el"></div>
       <div id="sub-chart-summary" style="margin-top:8px"></div>
     </div>
@@ -1790,7 +1864,6 @@ function lsRemove(k){ localStorage.removeItem(nsKey(k)); }
 let reportGroups = Array.isArray(lsGet('reportGroups')) ? lsGet('reportGroups') : [];
 
 function groupByKey(key){ return reportGroups.find(g => g.key === key) || null; }
-function getGroupIds(key){ const g = groupByKey(key); return g ? (g.meters || []) : []; }
 function zoneName(zoneKey){ const g = groupByKey(zoneKey); return (g && g.name) ? g.name : (zoneKey || 'อื่นๆ'); }
 function zoneIcon(zoneKey){ const g = groupByKey(zoneKey); return (g && g.icon) ? g.icon : '📦'; }
 
@@ -1866,14 +1939,6 @@ function fmtNum(val, meterId){
   const dec = sub && sub.decimal !== undefined ? sub.decimal : 0;
   return parseFloat(val || 0).toFixed(dec);
 }
-function fmtChartDate(dateStr){
-  if(!dateStr) return '—';
-  let obj;
-  if(String(dateStr).includes('T')) obj = new Date(dateStr);
-  else { const [y,m,dy] = String(dateStr).split('-'); obj = new Date(y, m-1, dy); }
-  if(isNaN(obj.getTime())) return String(dateStr);
-  return `${String(obj.getDate()).padStart(2,'0')}/${String(obj.getMonth()+1).padStart(2,'0')}`;
-}
 /* Local-date helper. toISOString() formats in UTC, so using it to derive
    "today" or a date-range boundary silently shifts the answer back a day for
    the seven hours after Thai midnight. Every date this app exchanges with the
@@ -1897,11 +1962,6 @@ function setNow(){
   const pad = v => String(v).padStart(2, '0');
   if(ed) ed.value = n.getFullYear() + '-' + pad(n.getMonth()+1) + '-' + pad(n.getDate());
   if(et) et.value = pad(n.getHours()) + ':' + pad(n.getMinutes());
-}
-function getLastKwh(meterId){
-  const sorted = records.filter(r => r.meterId === meterId)
-    .sort((a,b) => (`${b.date} ${b.time||'00:00'}`).localeCompare(`${a.date} ${a.time||'00:00'}`));
-  return sorted.length ? parseFloat(sorted[0].kwh) || 0 : null;
 }
 /* Per-meter chart data store, keyed by meterId. Populated by
    loadSubChartRecords() from the getMeterRecords action, which reads one
@@ -2584,44 +2644,6 @@ function refreshG9Chart(){
     await renderG9Chart();
   });
 }
-/* Grows `records` by only the tail end, instead of re-fetching everything
-   the window already holds. A recorder can add hundreds of readings between
-   refreshes; re-downloading all of them every time someone just wants to see
-   whether anything moved wastes exactly the bandwidth/latency this session
-   spent a long time trying to cut. Re-uses the max date already in memory as
-   dateFrom (overlapping that one day is cheap and guarantees nothing on the
-   boundary is missed), then merges by id so an edited row on that boundary
-   day overwrites its old copy rather than duplicating.
-   Editing an OLDER row (outside this tail) is not something this can see —
-   that still needs "📚 โหลดข้อมูลทั้งหมด" on the Data tab, which does a full
-   reload on purpose. */
-async function refreshRecordsIncremental(){
-  if(!records.length){ await loadAdminRecords(); return; }   // no baseline yet — full load
-  let maxDate = records[0].date;
-  records.forEach(r => { if(r.date > maxDate) maxDate = r.date; });
-  try{
-    const res = await apiPostAuthed({ action:'getRawRecords', dateFrom: maxDate });
-    const server = res.records || [];
-    /* The server returns EVERY record on or after maxDate — so within that
-       window the server's list is the complete truth, not just additions.
-       A plain merge-by-id (keep every local row, overwrite/add from server)
-       silently misses deletions: a row deleted on another device is absent
-       from the server response, but a merge that only ever adds or updates
-       never removes it, leaving a phantom bar on the chart that the Data
-       tab (which fully reloads) doesn't show. So: keep local rows OLDER than
-       maxDate untouched (outside the refreshed window), and for the window
-       itself take the server's set verbatim — new rows appear, edits apply,
-       and deletions actually disappear. */
-    const older = records.filter(r => r.date < maxDate);
-    const byId = {};
-    older.forEach(r => { byId[r.id] = r; });
-    server.forEach(r => { byId[r.id] = r; });
-    records = computeUsed(Object.values(byId));
-    persist();
-    updateRecordWindowNotice();
-  }catch(e){ /* apiPostAuthed already surfaced the error toast */ }
-}
-
 /* Meter-select handler for the per-meter chart. Fetches that meter's rows via
    the lightweight action, then renders. Shows a loading state on the chart
    element while the fetch is in flight so it doesn't look frozen. */
@@ -2629,7 +2651,7 @@ async function onSubChartMeterChange(){
   var meterId = document.getElementById('chart-sub').value;
   var el = document.getElementById('sub-chart-el');
   if(!meterId){ renderSubChart(); return; }
-  if(el && !subChartRecords[meterId]) el.innerHTML = '<div class="section-empty">กำลังโหลด...</div>';
+  if(el && !subChartRecords[meterId]) el.innerHTML = chartSkeletonHTML();
   try { await loadSubChartRecords(meterId); }
   catch(e){ /* fall back to whatever getSubRecs can find in global records */ }
   renderSubChart();
@@ -2701,6 +2723,40 @@ const CDN = {
 function ensureQRCode(){    return (typeof QRCode!=='undefined')    ? Promise.resolve() : loadScript(CDN.qrcode); }
 function ensureXLSX(){      return (typeof XLSX!=='undefined')      ? Promise.resolve() : loadScript(CDN.xlsx); }
 function ensureApex(){      return (typeof ApexCharts!=='undefined') ? Promise.resolve() : loadScript(CDN.apexcharts); }
+
+/* HTML for the chart skeleton (see .chart-skeleton CSS). Eight bars is enough
+   to read as "a bar chart is loading" without looking like real data. */
+function chartSkeletonHTML(){
+  return '<div class="chart-skeleton">' +
+    '<div class="sk-bar"></div>'.repeat(8) +
+    '</div>';
+}
+
+/* Debounced chart redraws for the two server-backed charts (cmp, g9). Tapping
+   a range/period button or nudging a date field used to fire renderCmpChart /
+   renderG9Chart synchronously on every single change — so clicking through
+   "this month → last month → 3 months" quickly launched three getMonthlySummary
+   round-trips back to back, and the UI felt like it lagged behind the taps.
+   These wrappers show the skeleton immediately (instant visual feedback) but
+   hold the actual fetch for a beat, so a rapid burst of taps collapses into one
+   network call for the final selection. The per-meter chart reads from an
+   already-loaded in-memory store, so it stays synchronous — no debounce needed
+   there. */
+var _cmpDebounceTimer = null, _g9DebounceTimer = null;
+var CHART_DEBOUNCE_MS = 220;
+function renderCmpChartDebounced(){
+  var el = document.getElementById('cmp-chart-el');
+  if(el && document.getElementById('cmp-group').value) el.innerHTML = chartSkeletonHTML();
+  if(_cmpDebounceTimer) clearTimeout(_cmpDebounceTimer);
+  _cmpDebounceTimer = setTimeout(function(){ _cmpDebounceTimer = null; renderCmpChart(); }, CHART_DEBOUNCE_MS);
+}
+function renderG9ChartDebounced(){
+  var el = document.getElementById('g9-chart-el');
+  if(el) el.innerHTML = chartSkeletonHTML();
+  if(_g9DebounceTimer) clearTimeout(_g9DebounceTimer);
+  _g9DebounceTimer = setTimeout(function(){ _g9DebounceTimer = null; renderG9Chart(); }, CHART_DEBOUNCE_MS);
+}
+
 
 /* Shown next to the status dot at all times (not just in a toast, which
    disappears after a couple of seconds) so a glance at the header answers
@@ -3019,7 +3075,13 @@ function goTab(name){
        tab still calls ensureAdminRecords on its own, unchanged.) */
     (async () => {
       if(appMode === 'admin' && !availableMonths) await loadAvailableMonths();
-      populateDDs(); setSubQuick('30d'); buildCompareGroupOptions(); initG9Pickers(); initCmpPickers();
+      populateDDs(); setSubQuick('thisM'); buildCompareGroupOptions(); initG9Pickers(); initCmpPickers();
+      // Light the per-meter segment to match its default range (this month),
+      // consistent with the group chart's segment default.
+      var subSeg = document.getElementById('sub-segment');
+      if(subSeg && !subSeg.querySelector('button.on')){
+        var d = subSeg.querySelector('button[data-range="thisM"]'); if(d) d.classList.add('on');
+      }
       /* The card the person sees first — "กราฟเทียบการใช้ไฟฟ้าแต่ละกลุ่ม" — is
          rendered to completion before the second chart even starts. Both used to
          fire together; they hit getSummaryCached with different date ranges (so
@@ -3043,7 +3105,6 @@ function getDayType(dateStr){
   const dow = new Date(y, m-1, d).getDay();
   return (dow === 0 || dow === 6) ? 'holiday' : 'work';
 }
-function getDayNote(dateStr){ return workCalendar.find(c => c.date === dateStr)?.note || ''; }
 async function addCalendarDay(){
   const date = document.getElementById('cal-date').value;
   const type = document.getElementById('cal-type').value;
@@ -3467,6 +3528,23 @@ async function saveRecord(){
   }
   await doSaveRecord(activeSub, kwh, date, time, user, note);
 }
+/* Recomputes `used` across a recent-readings list after a new reading is
+   prepended. A freshly saved record arrives with no `used`, and the reading
+   that was previously newest now HAS a later reading to diff against — its
+   `used` (the "consumption this round" number the recorder wants to see) only
+   exists once that next reading is in hand. Rather than duplicate the diff +
+   zero-guard logic, this reuses computeUsed (which sorts oldest→newest and
+   sets `used` with the same guard as everywhere else), then restores the
+   newest-first order the recent list is displayed in. Takes one extra element
+   (slice 0,6 by the caller) so the oldest visible row still has a neighbour to
+   diff against and doesn't wrongly show 0. */
+function _recomputeRecentUsed(recentList, meterId){
+  const copy = recentList.map(r => Object.assign({}, r));   // don't mutate caller's objects in place
+  computeUsed(copy);                                        // sorts ascending + sets used
+  copy.sort((a,b) => (`${b.date} ${b.time||'00:00'}`).localeCompare(`${a.date} ${a.time||'00:00'}`));  // back to newest-first
+  return copy;
+}
+
 async function doSaveRecord(sub, kwh, date, time, user, note){
   const now = new Date();
   const rec = { id: `REC-${now.getTime()}-${Math.floor(Math.random()*1000)}`, meterId: sub.id, meterName: sub.name, zone: sub.zone, date, time, kwh, user, note, ts: now.toISOString(), editedTs: '', editedBy: '' };
@@ -3482,9 +3560,9 @@ async function doSaveRecord(sub, kwh, date, time, user, note){
   meterStatus[sub.id] = true;
   meterStatusToday[sub.id] = true;
   if(bulkRecent && bulkRecent[sub.id]){
-    bulkRecent[sub.id] = [rec].concat(bulkRecent[sub.id]).slice(0, 5);
+    bulkRecent[sub.id] = _recomputeRecentUsed([rec].concat(bulkRecent[sub.id]).slice(0, 6), sub.id).slice(0, 5);
   }
-  activeSubRecent = [rec].concat(activeSubRecent || []).slice(0, 5);
+  activeSubRecent = _recomputeRecentUsed([rec].concat(activeSubRecent || []).slice(0, 6), sub.id).slice(0, 5);
 
   document.getElementById('in-kwh').value  = '';
   document.getElementById('in-note').value = '';
@@ -3695,7 +3773,44 @@ function populateDDs(){
   document.getElementById('fl-sub').innerHTML = sOpts;
   const cs = document.getElementById('chart-sub');
   if(cs) cs.innerHTML = cOpts;
+  // Populate the searchable meter datalist (name + id both searchable). Same
+  // pattern as the group picker: the visible input searches, the hidden
+  // <select id=chart-sub> keeps the id that onSubChartMeterChange reads.
+  const list = document.getElementById('chart-sub-list');
+  if(list){
+    list.innerHTML = subs.map(s => `<option value="${esc(s.name)} (${s.id})">`).join('');
+  }
 }
+
+/* Resolves the typed meter (matches name or id, exact then unique-partial) to
+   its id, sets the hidden select, and loads that meter's chart — same contract
+   as onCmpGroupSearch. */
+function onSubSearch(){
+  const searchEl = document.getElementById('chart-sub-search');
+  const sel = document.getElementById('chart-sub');
+  if(!searchEl || !sel) return;
+  const typed = searchEl.value.trim();
+  if(!typed) return;
+  const low = typed.toLowerCase();
+  // datalist values look like "NAME (ID)" — try to pull the id out first
+  let match = subs.find(s => `${s.name} (${s.id})` === typed);
+  if(!match) match = subs.find(s => s.id.toLowerCase() === low || s.name.toLowerCase() === low);
+  if(!match){
+    const hits = subs.filter(s => s.id.toLowerCase().includes(low) || s.name.toLowerCase().includes(low));
+    if(hits.length === 1) match = hits[0];
+  }
+  if(match){ sel.value = match.id; onSubChartMeterChange(); }
+}
+
+/* Segmented range control for the per-meter chart — mirrors setCmpQuickSeg. */
+function setSubQuickSeg(key){
+  setSubQuick(key);
+  const seg = document.getElementById('sub-segment');
+  if(seg) seg.querySelectorAll('button').forEach(b => {
+    b.classList.toggle('on', b.getAttribute('data-range') === key);
+  });
+}
+
 /* The Data-tab stat tiles were removed: after the rolling 90-day record
    window was introduced, three of the four counters (total records,
    meters recorded, total kWh) silently described the loaded window
@@ -5033,7 +5148,7 @@ function aggregateRecords(recs, period, dateFrom, dateTo){
       var ds = fmt(cur);
       var p = ds.split('-').map(Number);
       var val = byDate[ds] ? byDate[ds].used : 0;
-      result.push({ label:p[2]+'/'+p[1], value:val, date:ds, hol:getDayType(ds)==='holiday' });
+      result.push({ label:p[2]+'/'+p[1], value:val, date:ds, hol:getDayType(ds)==='holiday', hasData: !!byDate[ds] });
       cur.setDate(cur.getDate()+1);
     }
     return result;
@@ -5056,7 +5171,7 @@ function aggregateRecords(recs, period, dateFrom, dateTo){
     var endD = new Date(ep[0], ep[1]-1, 1);
     while(curD <= endD){
       var key = curD.getFullYear()+'-'+String(curD.getMonth()+1).padStart(2,'0');
-      result.push({ label:MN[curD.getMonth()+1]+' '+curD.getFullYear(), value:byM[key]||0, date:key });
+      result.push({ label:MN[curD.getMonth()+1]+' '+curD.getFullYear(), value:byM[key]||0, date:key, hasData: byM[key] !== undefined });
       curD.setMonth(curD.getMonth()+1);
     }
     return result;
@@ -5068,7 +5183,7 @@ function aggregateRecords(recs, period, dateFrom, dateTo){
     byY[y] += parseFloat(r.used)||0;
   });
   return Object.entries(byY).sort(function(a,b){return a[0]-b[0];}).map(function(e){
-    return { label:e[0], value:e[1], date:e[0] };
+    return { label:e[0], value:e[1], date:e[0], hasData:true };
   });
 }
 
@@ -5085,13 +5200,23 @@ function aggregateRecords(recs, period, dateFrom, dateTo){
    summary) — that part is genuinely different and stays separate. */
 function buildChartOpts(dataPoints, state, TC){
   const total = dataPoints.reduce((a,d) => a + d.value, 0);
-  const avg = dataPoints.length ? total / dataPoints.length : 0;
+  /* Average must divide by days that actually have a reading, not by every
+     slot on the axis. "This month" spans day 1 to the last day of the month,
+     so mid-month the range includes future days with value 0 (no data yet).
+     Counting those in the denominator dragged the average down artificially.
+     hasData (set by aggregateRecords) marks the real ones; empty future/blank
+     days still render on the axis, they just don't dilute the average. */
+  const withData = dataPoints.filter(d => d.hasData);
+  const avg = withData.length ? total / withData.length : 0;
   const pl = state.period === 'day' ? 'วัน' : state.period === 'month' ? 'เดือน' : 'ปี';
 
   let avgWork = 0, avgHol = 0, nWork = 0, nHol = 0;
   if(state.period === 'day'){
     let sumWork = 0, sumHol = 0;
-    dataPoints.forEach(d => { if(d.hol){ sumHol += d.value; nHol++; } else { sumWork += d.value; nWork++; } });
+    dataPoints.forEach(d => {
+      if(!d.hasData) return;   // skip empty days in both the average and the day count
+      if(d.hol){ sumHol += d.value; nHol++; } else { sumWork += d.value; nWork++; }
+    });
     avgWork = nWork ? sumWork / nWork : 0;
     avgHol  = nHol  ? sumHol  / nHol  : 0;
   }
@@ -5160,7 +5285,7 @@ function buildChartOpts(dataPoints, state, TC){
   }
   const summaryHtml = '<span class="chip chip-green">'+UNIT_ICON+' รวม '+Math.round(total).toLocaleString()+' '+UNIT+'</span> ' +
     avgChips + ' ' +
-    '<span class="chip" style="background:var(--accent-dim);color:var(--accent);border:1px solid var(--accent-border)">'+dataPoints.length+' '+pl+'</span>';
+    '<span class="chip" style="background:var(--accent-dim);color:var(--accent);border:1px solid var(--accent-border)">'+withData.length+' '+pl+'</span>';
 
   return { chartOpts, summaryHtml };
 }
@@ -5254,7 +5379,7 @@ function setG9Period(p){
   document.getElementById('g9-date').style.display = p==='day' ? '' : 'none';
   document.getElementById('g9-month').style.display = p==='month' ? '' : 'none';
   document.getElementById('g9-year').style.display = p==='year' ? '' : 'none';
-  renderG9Chart();
+  renderG9ChartDebounced();
 }
 function setG9Sort(s){
   g9State.sort = s;
@@ -5262,13 +5387,13 @@ function setG9Sort(s){
     var el = document.getElementById('g9-s-'+k);
     if(el) el.className = k===s ? 'ctrl-btn green' : 'ctrl-btn';
   });
-  renderG9Chart();
+  renderG9ChartDebounced();
 }
 function toggleG9Pct(){
   g9State.showPct = !g9State.showPct;
   var el = document.getElementById('g9-pct');
   if(el) el.className = g9State.showPct ? 'ctrl-btn on' : 'ctrl-btn';
-  renderG9Chart();
+  renderG9ChartDebounced();
 }
 function navG9(dir){
   if(g9State.period === 'day'){
@@ -5284,7 +5409,7 @@ function navG9(dir){
     var el = document.getElementById('g9-year');
     el.value = String(parseInt(el.value)+dir);
   }
-  renderG9Chart();
+  renderG9ChartDebounced();
 }
 function initG9Pickers(){
   // Default the pickers to the most recent day/month we actually have loaded,
@@ -5335,7 +5460,7 @@ async function renderG9Chart(){
   if(g9State.period==='day'){ var pp=pick.split('-'); lbl.textContent=parseInt(pp[2])+' '+MN[parseInt(pp[1])]+' '+pp[0]; }
   else if(g9State.period==='month'){ var pp=pick.split('-'); lbl.textContent=MN[parseInt(pp[1])]+' '+pp[0]; }
   else lbl.textContent = 'ปี '+pick;
-  el.innerHTML='<div class="section-empty">⏳ กำลังคำนวณ...</div>';
+  el.innerHTML = chartSkeletonHTML();
   var dateFrom, dateTo;
   if(g9State.period==='day'){
     dateFrom = pick;
@@ -5434,7 +5559,50 @@ function buildCompareGroupOptions(){
   sel.innerHTML = reportGroups.map(c => `<option value="${c.key}">${esc(c.name)}</option>`).join('')
     + '<option value="__TOTAL__">TOTAL (ทุกกลุ่ม)</option>';
   if(prev) sel.value = prev;
+  // Mirror the options into the searchable datalist. The visible <input> shows
+  // the group NAME; the hidden <select> still holds the key that renderCmpChart
+  // reads, so nothing downstream changes — onCmpGroupSearch keeps them in sync.
+  const list = document.getElementById('cmp-group-list');
+  if(list){
+    list.innerHTML = reportGroups.map(c => `<option value="${esc(c.name)}">`).join('')
+      + '<option value="TOTAL (ทุกกลุ่ม)">';
+  }
+  // Seed the search box with whatever the select currently points at.
+  const searchEl = document.getElementById('cmp-group-search');
+  if(searchEl && !searchEl.value){
+    const cur = reportGroups.find(c => c.key === sel.value);
+    searchEl.value = cur ? cur.name : (sel.value === '__TOTAL__' ? 'TOTAL (ทุกกลุ่ม)' : '');
+  }
 }
+
+/* Resolves the typed group name back to its key, updates the hidden <select>,
+   and redraws. Matches exactly first, then a forgiving contains-match so a
+   partial type ("PT7") still resolves if it uniquely identifies one group. */
+function onCmpGroupSearch(){
+  const searchEl = document.getElementById('cmp-group-search');
+  const sel = document.getElementById('cmp-group');
+  if(!searchEl || !sel) return;
+  const typed = searchEl.value.trim();
+  if(!typed) return;
+  if(typed === 'TOTAL (ทุกกลุ่ม)'){ sel.value = '__TOTAL__'; renderCmpChart(); return; }
+  let match = reportGroups.find(c => c.name === typed);
+  if(!match){
+    const hits = reportGroups.filter(c => c.name.toLowerCase().includes(typed.toLowerCase()));
+    if(hits.length === 1) match = hits[0];   // unambiguous partial — accept it
+  }
+  if(match){ sel.value = match.key; renderCmpChart(); }
+}
+
+/* Segmented range control — sets the date range AND lights the active segment.
+   Wraps the existing setCmpQuick so the date logic stays in one place. */
+function setCmpQuickSeg(key){
+  setCmpQuick(key);
+  const seg = document.getElementById('cmp-segment');
+  if(seg) seg.querySelectorAll('button').forEach(b => {
+    b.classList.toggle('on', b.getAttribute('data-range') === key);
+  });
+}
+
 function getColIds(key){
   if(key === '__TOTAL__') return reportGroups.flatMap(c => c.meters || []);
   const col = reportGroups.find(c => c.key === key);
@@ -5511,7 +5679,7 @@ function setCmpQuick(key){
   var r = getQuickRange(key);
   document.getElementById('cmp-from').value = r[0];
   document.getElementById('cmp-to').value = r[1];
-  renderCmpChart();
+  renderCmpChartDebounced();
 }
 function setCmpPeriod(p){
   cmpState.period = p;
@@ -5519,7 +5687,7 @@ function setCmpPeriod(p){
     var el = document.getElementById('cmp-p-'+k);
     if(el) el.className = k===p ? 'ctrl-btn green' : 'ctrl-btn';
   });
-  renderCmpChart();
+  renderCmpChartDebounced();
 }
 function setCmpType(t){
   cmpState.type = t;
@@ -5527,7 +5695,7 @@ function setCmpType(t){
     var el = document.getElementById('cmp-t-'+k);
     if(el) el.className = k===t ? 'ctrl-btn green' : 'ctrl-btn';
   });
-  renderCmpChart();
+  renderCmpChartDebounced();
 }
 function toggleCmpOpt(opt){
   // The button already passed 'avg' as an argument; this just never had a
@@ -5538,13 +5706,13 @@ function toggleCmpOpt(opt){
     cmpState.showHol = !cmpState.showHol;
     var elH = document.getElementById('cmp-hol');
     if(elH) elH.className = cmpState.showHol ? 'ctrl-btn on' : 'ctrl-btn';
-    renderCmpChart();
+    renderCmpChartDebounced();
     return;
   }
   cmpState.showAvg = !cmpState.showAvg;
   var el = document.getElementById('cmp-avg');
   if(el) el.className = cmpState.showAvg ? 'ctrl-btn on' : 'ctrl-btn';
-  renderCmpChart();
+  renderCmpChartDebounced();
 }
 
 let cmpReqId = 0;
@@ -5594,6 +5762,16 @@ function initCmpPickers(){
   var last  = new Date(now.getFullYear(), now.getMonth()+1, 0);
   if(!fromEl.value) fromEl.value = ymdLocal(first);
   if(!toEl.value)   toEl.value   = ymdLocal(last);
+  // Light the segment that matches the default range (this month) so the
+  // control's highlight agrees with what the chart is actually showing.
+  var seg = document.getElementById('cmp-segment');
+  if(seg){
+    var active = seg.querySelector('button.on');
+    if(!active){
+      var thisM = seg.querySelector('button[data-range="thisM"]');
+      if(thisM) thisM.classList.add('on');
+    }
+  }
 }
 
 async function renderCmpChart(){
@@ -5607,7 +5785,7 @@ async function renderCmpChart(){
   var toVal = document.getElementById('cmp-to').value || null;
   var TC = getThemeColors();
   var MN = ['','ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
-  el.innerHTML='<div class="section-empty">⏳ กำลังคำนวณ...</div>';
+  el.innerHTML = chartSkeletonHTML();
   try{
     var gran = cmpState.period === 'day' ? 'day' : 'month';
     var apiToVal = toVal;
@@ -5632,20 +5810,24 @@ async function renderCmpChart(){
       });
       var byYear = {};
       displayPeriods.forEach(function(p){ ids.forEach(function(id){ if(!_countsTowardEnergy(id)) return; var u=meterUsedOnDay(meterMap,id,p,allPeriods); if(u!==null) byYear[p.slice(0,4)]=(byYear[p.slice(0,4)]||0)+u; }); });
-      dataPoints = Object.entries(byYear).map(function(e){return {label:e[0],value:e[1]};});
+      dataPoints = Object.entries(byYear).map(function(e){return {label:e[0],value:e[1],hasData:true};});
     } else {
-      var valByPeriod = {};
+      var valByPeriod = {}, hasByPeriod = {};
       allPeriods.forEach(function(p){
         var total=0, has=false;
         ids.forEach(function(id){ if(!_countsTowardEnergy(id)) return; var u=meterUsedOnDay(meterMap,id,p,allPeriods); if(u!==null){total+=u;has=true;} });
         valByPeriod[p] = has ? total : 0;
+        hasByPeriod[p] = has;
       });
       var fullPeriods = _cmpFillPeriods(allPeriods, fromVal, toVal, cmpState.period);
       dataPoints = fullPeriods.map(function(p){
         var label;
         if(cmpState.period==='day') label=parseInt(p.split('-')[2])+'/'+parseInt(p.split('-')[1]);
         else label=MN[parseInt(p.split('-')[1])]+' '+p.slice(0,4);
-        return { label:label, value:valByPeriod[p]||0, hol:(cmpState.period==='day' && getDayType(p)==='holiday') };
+        // hasData: this period actually had a reading (a filled-in gap from
+        // _cmpFillPeriods, or a future day in a this-month range, is false) so
+        // the average in buildChartOpts divides by real days only.
+        return { label:label, value:valByPeriod[p]||0, hol:(cmpState.period==='day' && getDayType(p)==='holiday'), hasData: !!hasByPeriod[p] };
       });
     }
     if(!dataPoints.length){ el.innerHTML='<div class="section-empty">ไม่มีข้อมูล</div>'; return; }
