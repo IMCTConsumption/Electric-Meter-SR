@@ -6,6 +6,15 @@
 <title>⚡ ระบบจดบันทึกมิเตอร์ไฟฟ้า Electric Meter SR Plant</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- One combined font request covering every family actually used: Inter (UI),
+     Sarabun (Thai body), IBM Plex Mono (numbers/timestamps). Previously the app
+     pulled fonts from TWO places — this <link> plus a CSS @import lower down —
+     and the first request also loaded IBM Plex Sans Thai at four weights that
+     no rule uses as a primary face (Sarabun covers Thai). The @import was the
+     slower of the two anyway: the browser can't discover it until the main CSS
+     has downloaded and parsed, so it serialised the font fetch behind the
+     stylesheet. Consolidating to this single <link> in <head> removes the
+     duplicate download and lets the fonts start loading immediately. -->
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sarabun:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
 
@@ -884,7 +893,11 @@ tr:hover td{background:var(--surface-2)}
 .warn-box{background:var(--orange-dim);border:1px solid rgba(251,146,60,.3);border-radius:var(--r-md);padding:11px 13px;margin-bottom:12px;font-size:var(--fs-sm);color:var(--orange);line-height:1.7}
 .empty{text-align:center;padding:28px;color:var(--text-3)}
 .empty i{font-size:28px;display:block;margin-bottom:6px;font-style:normal}
-.section-empty{padding:14px;text-align:center;color:var(--text-3);font-size:var(--fs-sm)}
+/* Empty/placeholder state inside a chart area. Given a real min-height and
+   centering so it reads as a deliberate "no data" state instead of a blank
+   white panel that looks like the chart failed to load. */
+.section-empty{min-height:200px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:24px 14px;text-align:center;color:var(--text-3);font-size:var(--fs-sm)}
+.section-empty::before{content:'📊';font-size:32px;opacity:.4}
 @media(max-width:480px){
   .panel{padding:10px 10px 90px}
   .f-2col,.f-3col{grid-template-columns:1fr;gap:8px}
@@ -949,6 +962,29 @@ i svg{ width:1em; height:1em; display:inline-block; vertical-align:-0.12em; }
 .rd-segment button{flex:1;border:none;background:transparent;color:var(--text-2);font-size:13px;font-family:inherit;padding:8px 4px;border-radius:7px;cursor:pointer;transition:background .12s,color .12s;white-space:nowrap}
 .rd-segment button:hover{color:var(--text-1)}
 .rd-segment button.on{background:var(--accent);color:var(--bg);font-weight:700}
+/* Custom picker dropdown — replaces the <datalist> approach, which on real
+   devices didn't open on tap (you had to type first), fired a redraw on every
+   keystroke (deleting one char reset the chart), and gave no clear open state.
+   This one: tap the field → the full list drops open immediately; an optional
+   search box at the top filters as you type but does NOT touch the chart;
+   picking a row is what commits + redraws. Works identically on mobile and
+   desktop because it's plain DOM, not a native control. */
+.rd-picker{position:relative}
+.rd-picker-btn{width:100%;display:flex;align-items:center;gap:8px;padding:11px 12px;background:var(--surface-2);border:1px solid var(--accent-border);border-radius:10px;color:var(--text-1);font-size:14px;font-family:inherit;cursor:pointer;text-align:left}
+.rd-picker-btn:focus{outline:none;border-color:var(--accent)}
+.rd-picker-btn .rd-picker-label{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rd-picker-btn .rd-picker-label.placeholder{color:var(--text-3)}
+.rd-picker-btn .rd-picker-caret{color:var(--accent);font-size:12px;transition:transform .15s}
+.rd-picker.open .rd-picker-caret{transform:rotate(180deg)}
+.rd-picker-panel{display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:50;background:var(--surface-1);border:1px solid var(--border-hi);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.35);max-height:280px;overflow:hidden;flex-direction:column}
+.rd-picker.open .rd-picker-panel{display:flex}
+.rd-picker-search{margin:8px;padding:9px 11px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text-1);font-size:13px;font-family:inherit}
+.rd-picker-search:focus{outline:none;border-color:var(--accent)}
+.rd-picker-list{overflow-y:auto;overflow-x:hidden}
+.rd-picker-opt{padding:11px 14px;font-size:14px;color:var(--text-1);cursor:pointer;border-top:1px solid var(--border)}
+.rd-picker-opt:hover,.rd-picker-opt.active{background:var(--accent-dim);color:var(--accent)}
+.rd-picker-opt.sel{background:var(--accent-dim);color:var(--accent);font-weight:700}
+.rd-picker-empty{padding:14px;text-align:center;color:var(--text-3);font-size:13px}
 .chart-ctrl-label{font-size:11px;color:var(--text-3);margin-right:4px;white-space:nowrap}
 .ctrl-btn{padding:6px 11px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--text-3);transition:all .15s;white-space:nowrap;font-family:var(--font-body)}
 .ctrl-btn:hover{border-color:var(--border-hi);color:var(--text-2)}
@@ -1464,12 +1500,17 @@ i svg{ width:1em; height:1em; display:inline-block; vertical-align:-0.12em; }
       <div class="chart-desc">ภาพรวมการใช้พลังงานของแต่ละกลุ่ม เทียบตามช่วงเวลา</div>
       <div class="f-row">
         <label class="f-label">🏭 เลือกโรง / กลุ่ม</label>
-        <div class="rd-search-wrap">
-          <i class="ti ti-search" aria-hidden="true">🔍</i>
-          <input class="rd-search-input" id="cmp-group-search" list="cmp-group-list" placeholder="พิมพ์ค้นหากลุ่ม เช่น PT7..." autocomplete="off" oninput="onCmpGroupSearch()">
-          <datalist id="cmp-group-list"></datalist>
+        <div class="rd-picker" id="cmp-group-picker">
+          <button type="button" class="rd-picker-btn" onclick="togglePicker('cmp-group-picker')">
+            <span class="rd-picker-label placeholder" id="cmp-group-label">เลือกกลุ่ม...</span>
+            <span class="rd-picker-caret">▼</span>
+          </button>
+          <div class="rd-picker-panel">
+            <input class="rd-picker-search" id="cmp-group-psearch" placeholder="🔍 ค้นหากลุ่ม..." autocomplete="off" oninput="filterPicker('cmp-group-picker')">
+            <div class="rd-picker-list" id="cmp-group-plist"></div>
+          </div>
         </div>
-        <select class="f-input rd-select-hint" id="cmp-group" onchange="renderCmpChart()" style="display:none"></select>
+        <select class="f-input rd-select-hint" id="cmp-group" onchange="renderCmpChartDebounced()" style="display:none"></select>
       </div>
       <div class="rd-segment" id="cmp-segment">
         <button data-range="thisM" onclick="setCmpQuickSeg('thisM')">เดือนนี้</button>
@@ -1548,10 +1589,15 @@ i svg{ width:1em; height:1em; display:inline-block; vertical-align:-0.12em; }
       <div class="chart-desc">เจาะจงมิเตอร์ตัวเดียว ดูการใช้ตามช่วงเวลา</div>
       <div class="f-row">
         <label class="f-label">🔌 เลือกมิเตอร์</label>
-        <div class="rd-search-wrap">
-          <i class="ti ti-search" aria-hidden="true">🔍</i>
-          <input class="rd-search-input" id="chart-sub-search" list="chart-sub-list" placeholder="พิมพ์ค้นหามิเตอร์ เช่น SUB-05..." autocomplete="off" oninput="onSubSearch()">
-          <datalist id="chart-sub-list"></datalist>
+        <div class="rd-picker" id="chart-sub-picker">
+          <button type="button" class="rd-picker-btn" onclick="togglePicker('chart-sub-picker')">
+            <span class="rd-picker-label placeholder" id="chart-sub-label">เลือกมิเตอร์...</span>
+            <span class="rd-picker-caret">▼</span>
+          </button>
+          <div class="rd-picker-panel">
+            <input class="rd-picker-search" id="chart-sub-psearch" placeholder="🔍 ค้นหามิเตอร์..." autocomplete="off" oninput="filterPicker('chart-sub-picker')">
+            <div class="rd-picker-list" id="chart-sub-plist"></div>
+          </div>
         </div>
         <select class="f-input" id="chart-sub" onchange="onSubChartMeterChange()" style="display:none"><option value="">เลือก Sub...</option></select>
       </div>
@@ -2799,7 +2845,7 @@ async function _fetchDoGet(retries = 2){
   let lastErr;
   for(let attempt = 0; attempt <= retries; attempt++){
     const ctrl = new AbortController();
-    const tid  = setTimeout(() => ctrl.abort(), 15000);
+    const tid  = setTimeout(() => ctrl.abort(), 8000);
     try{
       const res = await fetch(API_URL, { signal: ctrl.signal });
       clearTimeout(tid);
@@ -3773,33 +3819,18 @@ function populateDDs(){
   document.getElementById('fl-sub').innerHTML = sOpts;
   const cs = document.getElementById('chart-sub');
   if(cs) cs.innerHTML = cOpts;
-  // Populate the searchable meter datalist (name + id both searchable). Same
-  // pattern as the group picker: the visible input searches, the hidden
-  // <select id=chart-sub> keeps the id that onSubChartMeterChange reads.
-  const list = document.getElementById('chart-sub-list');
-  if(list){
-    list.innerHTML = subs.map(s => `<option value="${esc(s.name)} (${s.id})">`).join('');
+  // Build the custom meter picker. Label shows "name (id)"; both are
+  // searchable; picking commits + loads that meter.
+  if(document.getElementById('chart-sub-picker')){
+    _pickerData['chart-sub-picker'] = {
+      items: subs.map(s => ({ key:s.id, label:`${s.name} (${s.id})` })),
+      onPick: function(id){
+        cs.value = id; syncPickerLabel('chart-sub-picker'); onSubChartMeterChange();
+      }
+    };
+    renderPickerList('chart-sub-picker');
+    syncPickerLabel('chart-sub-picker');
   }
-}
-
-/* Resolves the typed meter (matches name or id, exact then unique-partial) to
-   its id, sets the hidden select, and loads that meter's chart — same contract
-   as onCmpGroupSearch. */
-function onSubSearch(){
-  const searchEl = document.getElementById('chart-sub-search');
-  const sel = document.getElementById('chart-sub');
-  if(!searchEl || !sel) return;
-  const typed = searchEl.value.trim();
-  if(!typed) return;
-  const low = typed.toLowerCase();
-  // datalist values look like "NAME (ID)" — try to pull the id out first
-  let match = subs.find(s => `${s.name} (${s.id})` === typed);
-  if(!match) match = subs.find(s => s.id.toLowerCase() === low || s.name.toLowerCase() === low);
-  if(!match){
-    const hits = subs.filter(s => s.id.toLowerCase().includes(low) || s.name.toLowerCase().includes(low));
-    if(hits.length === 1) match = hits[0];
-  }
-  if(match){ sel.value = match.id; onSubChartMeterChange(); }
 }
 
 /* Segmented range control for the per-meter chart — mirrors setCmpQuickSeg. */
@@ -5559,39 +5590,73 @@ function buildCompareGroupOptions(){
   sel.innerHTML = reportGroups.map(c => `<option value="${c.key}">${esc(c.name)}</option>`).join('')
     + '<option value="__TOTAL__">TOTAL (ทุกกลุ่ม)</option>';
   if(prev) sel.value = prev;
-  // Mirror the options into the searchable datalist. The visible <input> shows
-  // the group NAME; the hidden <select> still holds the key that renderCmpChart
-  // reads, so nothing downstream changes — onCmpGroupSearch keeps them in sync.
-  const list = document.getElementById('cmp-group-list');
-  if(list){
-    list.innerHTML = reportGroups.map(c => `<option value="${esc(c.name)}">`).join('')
-      + '<option value="TOTAL (ทุกกลุ่ม)">';
-  }
-  // Seed the search box with whatever the select currently points at.
-  const searchEl = document.getElementById('cmp-group-search');
-  if(searchEl && !searchEl.value){
-    const cur = reportGroups.find(c => c.key === sel.value);
-    searchEl.value = cur ? cur.name : (sel.value === '__TOTAL__' ? 'TOTAL (ทุกกลุ่ม)' : '');
-  }
+  // Build the custom picker's option rows. Each row carries its key in a data
+  // attribute; clicking commits (sets the hidden <select> + redraws). The list
+  // is fully rendered up front so tapping the field shows everything instantly.
+  const items = reportGroups.map(c => ({ key:c.key, label:c.name }));
+  items.push({ key:'__TOTAL__', label:'TOTAL (ทุกกลุ่ม)' });
+  _pickerData['cmp-group-picker'] = { items, onPick: function(key){
+    sel.value = key; syncPickerLabel('cmp-group-picker'); renderCmpChartDebounced();
+  }};
+  renderPickerList('cmp-group-picker');
+  syncPickerLabel('cmp-group-picker');
 }
 
-/* Resolves the typed group name back to its key, updates the hidden <select>,
-   and redraws. Matches exactly first, then a forgiving contains-match so a
-   partial type ("PT7") still resolves if it uniquely identifies one group. */
-function onCmpGroupSearch(){
-  const searchEl = document.getElementById('cmp-group-search');
-  const sel = document.getElementById('cmp-group');
-  if(!searchEl || !sel) return;
-  const typed = searchEl.value.trim();
-  if(!typed) return;
-  if(typed === 'TOTAL (ทุกกลุ่ม)'){ sel.value = '__TOTAL__'; renderCmpChart(); return; }
-  let match = reportGroups.find(c => c.name === typed);
-  if(!match){
-    const hits = reportGroups.filter(c => c.name.toLowerCase().includes(typed.toLowerCase()));
-    if(hits.length === 1) match = hits[0];   // unambiguous partial — accept it
-  }
-  if(match){ sel.value = match.key; renderCmpChart(); }
+/* ─── Custom picker component (shared by group + meter pickers) ───
+   _pickerData[id] holds {items:[{key,label}], onPick}. The three functions
+   below are generic over any picker id. */
+var _pickerData = {};
+function renderPickerList(id, filter){
+  const d = _pickerData[id]; if(!d) return;
+  const listEl = document.getElementById(id.replace('-picker','-plist'));
+  if(!listEl) return;
+  const sel = document.getElementById(id.replace('-picker',''));
+  const cur = sel ? sel.value : '';
+  const f = (filter||'').toLowerCase();
+  const rows = d.items.filter(it => !f || it.label.toLowerCase().includes(f) || it.key.toLowerCase().includes(f));
+  if(!rows.length){ listEl.innerHTML = '<div class="rd-picker-empty">ไม่พบ</div>'; return; }
+  listEl.innerHTML = rows.map(it =>
+    `<div class="rd-picker-opt${it.key===cur?' sel':''}" data-key="${esc(it.key)}" onclick="pickerChoose('${id}', this.getAttribute('data-key'))">${esc(it.label)}</div>`
+  ).join('');
 }
+function syncPickerLabel(id){
+  const d = _pickerData[id]; if(!d) return;
+  const sel = document.getElementById(id.replace('-picker',''));
+  const labelEl = document.getElementById(id.replace('-picker','-label'));
+  if(!sel || !labelEl) return;
+  const found = d.items.find(it => it.key === sel.value);
+  if(found){ labelEl.textContent = found.label; labelEl.classList.remove('placeholder'); }
+  else { labelEl.classList.add('placeholder'); }
+}
+function togglePicker(id){
+  const el = document.getElementById(id);
+  if(!el) return;
+  const wasOpen = el.classList.contains('open');
+  // close any other open pickers first
+  document.querySelectorAll('.rd-picker.open').forEach(p => p.classList.remove('open'));
+  if(!wasOpen){
+    el.classList.add('open');
+    renderPickerList(id, '');
+    const s = document.getElementById(id.replace('-picker','-psearch'));
+    if(s){ s.value=''; setTimeout(()=>s.focus(), 30); }
+  }
+}
+function filterPicker(id){
+  const s = document.getElementById(id.replace('-picker','-psearch'));
+  renderPickerList(id, s ? s.value : '');
+}
+function pickerChoose(id, key){
+  const d = _pickerData[id]; if(!d) return;
+  const el = document.getElementById(id);
+  if(el) el.classList.remove('open');
+  if(d.onPick) d.onPick(key);
+}
+/* Close pickers when tapping outside. */
+document.addEventListener('click', function(e){
+  if(!e.target.closest('.rd-picker')){
+    document.querySelectorAll('.rd-picker.open').forEach(p => p.classList.remove('open'));
+  }
+});
 
 /* Segmented range control — sets the date range AND lights the active segment.
    Wraps the existing setCmpQuick so the date logic stays in one place. */
