@@ -2799,7 +2799,7 @@ async function _fetchDoGet(retries = 2){
   let lastErr;
   for(let attempt = 0; attempt <= retries; attempt++){
     const ctrl = new AbortController();
-    const tid  = setTimeout(() => ctrl.abort(), 8000);
+    const tid  = setTimeout(() => ctrl.abort(), 15000);
     try{
       const res = await fetch(API_URL, { signal: ctrl.signal });
       clearTimeout(tid);
