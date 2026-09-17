@@ -37,11 +37,7 @@
   --rd-font-body:    'Inter', 'Sarabun', 'IBM Plex Sans Thai', system-ui, sans-serif;
   --rd-font-mono:    'IBM Plex Mono', 'SF Mono', Consolas, monospace;
   --rd-font-th:      'Sarabun', 'IBM Plex Sans Thai', 'Inter', system-ui, sans-serif;
-  /* Button tokens — intentionally do NOT flip with theme. A primary button
-     stays "dark navy bg + white text" in light mode; in dark mode it becomes
-     the cyan accent (dark navy text) so it still reads as the loudest
-     actionable element on the page instead of blending into a light --rd-ink
-     that would otherwise turn white-on-white. */
+
   --rd-btn-bg:       var(--rd-ink);
   --rd-btn-bg-hover: #1A2B45;
   --rd-btn-text:     #FFFFFF;
@@ -67,9 +63,6 @@
   --rd-shadow:       0 4px 16px rgba(0,0,0,.35);
   --rd-shadow-lg:    0 12px 32px rgba(0,0,0,.45);
 }
-
-/* Fonts are loaded via a single <link> in <head> (see the comment there) —
-   no @import here, which would serialise the fetch behind this stylesheet. */
 
 /* ─── New header ─── */
 .rd-header {
@@ -213,9 +206,7 @@
 
 /* ─── Sidebar drawer ─── */
 .rd-drawer-overlay {
-  /* Above #entry-section, which is position:fixed with z-index:100 — the
-     drawer previously sat at 50 and was painted underneath the entry screen,
-     so opening the menu while a meter was open appeared to do nothing. */
+
   position: fixed; inset: 0;
   background: rgba(10,22,40,.45);
   opacity: 0;
@@ -229,9 +220,7 @@
 .rd-drawer {
   position: fixed;
   top: 0; left: 0;
-  /* dvh tracks the *visible* viewport, so the sign-out row at the bottom of
-     the drawer isn't pushed under the mobile browser's toolbar. vh is kept
-     first as the fallback for browsers without dvh support. */
+
   height: 100vh;
   height: 100dvh;
   width: 280px;
@@ -3820,8 +3809,8 @@ function populateDDs(){
 /* Segmented range control for the per-meter chart — mirrors setCmpQuickSeg. */
 function setSubQuickSeg(slot){
   var r = getQuickRangeForPeriod(subChartState.period, slot);
-  document.getElementById('sub-from').value = r[0];
-  document.getElementById('sub-to').value = r[1];
+  document.getElementById('sub-from').value = _fitRangeToPeriod(r[0], subChartState.period);
+  document.getElementById('sub-to').value   = _fitRangeToPeriod(r[1], subChartState.period);
   const seg = document.getElementById('sub-segment');
   if(seg) seg.querySelectorAll('button').forEach((b,i) => b.classList.toggle('on', i===slot));
   renderSubChart();
@@ -5139,9 +5128,11 @@ function getQuickRangeForPeriod(period, slot){
     var f3=new Date(t); f3.setMonth(f3.getMonth()-2); f3.setDate(1); return [fmt(f3),today]; // 3 months
   }
   if(period === 'month'){
-    if(slot===0) return [y+'-01-01', today];                                              // this year
+    // Full calendar year for this/last year (Jan–Dec) so the chart always
+    // shows all 12 months of the chosen year, empty ones included.
+    if(slot===0) return [y+'-01-01', y+'-12-31'];                                         // this year
     if(slot===1) return [(y-1)+'-01-01', (y-1)+'-12-31'];                                 // last year
-    return [(y-2)+'-01-01', today];                                                       // 3 years
+    return [(y-2)+'-01-01', y+'-12-31'];                                                  // 3 years
   }
   // year
   if(slot===0) return [(y-2)+'-01-01', today];                                            // 3 years
@@ -5180,6 +5171,16 @@ function _fitRangeToPeriod(v, period){
   if(period === 'month') return v.slice(0,7);
   if(period === 'year')  return v.slice(0,4);
   return v;
+}
+/* Shortens Y-axis numbers to rounded units — 2,140,325 → "2.1M", 856,130 →
+   "856K" — instead of long exact figures crowding the axis. Tooltips still show
+   the precise value; this is display-only for the axis ticks. */
+function _fmtAxisNum(v){
+  v = Number(v) || 0;
+  var a = Math.abs(v);
+  if(a >= 1000000) return (v/1000000).toFixed(a >= 10000000 ? 0 : 1).replace(/\.0$/,'') + 'M';
+  if(a >= 1000)    return (v/1000).toFixed(a >= 100000 ? 0 : 1).replace(/\.0$/,'') + 'K';
+  return String(Math.round(v));
 }
 function _normRangeStart(v){
   v = String(v||'');
@@ -5388,7 +5389,7 @@ function buildChartOpts(dataPoints, state, TC){
     yaxis:{ title:{ text: UNIT, style:{fontSize:'12px', fontWeight:700, color:TC.text2} },
             min: 0,
             max: yMax,
-            labels:{style:{fontSize:'12px',colors:TC.text2}, formatter:v => Math.round(v).toLocaleString()},
+            labels:{style:{fontSize:'12px',colors:TC.text2}, formatter:v => _fmtAxisNum(v)},
             axisBorder:{show:false} },
     grid:{ borderColor:TC.border, strokeDashArray:3, xaxis:{lines:{show:false}}, yaxis:{lines:{show:true}} },
     tooltip:{ theme:TC.isDark?'dark':'light', style:{fontSize:'12px'}, y:{formatter:v => v!=null?Math.round(v).toLocaleString()+' '+UNIT:'—'} },
@@ -5456,11 +5457,16 @@ function toggleSubOpt(opt){
   if(el) el.className = on ? 'ctrl-btn on' : 'ctrl-btn';
   renderSubChart();
 }
-function renderSubChart(){
+async function renderSubChart(){
   var meterId = document.getElementById('chart-sub').value;
   var el = document.getElementById('sub-chart-el');
   var sumEl = document.getElementById('sub-chart-summary');
   if(!meterId){ el.innerHTML='<div class="section-empty">เลือก Meter เพื่อดูกราฟ</div>'; sumEl.innerHTML=''; return; }
+  // Skeleton + a painted frame before the (in-memory, instant) aggregation, so
+  // switching period/range/type shows a brief loading state like the other two
+  // charts instead of appearing frozen then snapping to the new bars.
+  el.innerHTML = chartSkeletonHTML();
+  await new Promise(function(r){ requestAnimationFrame(function(){ setTimeout(r, 0); }); });
   var fromVal = _normRangeStart(document.getElementById('sub-from').value || '');
   var toVal = _normRangeEnd(document.getElementById('sub-to').value || '');
   var recs = getSubRecs(meterId);
@@ -5613,6 +5619,9 @@ async function renderG9Chart(){
   else if(g9State.period==='month'){ var pp=pick.split('-'); lbl.textContent=MN[parseInt(pp[1])]+' '+pp[0]; }
   else lbl.textContent = 'ปี '+pick;
   el.innerHTML = chartSkeletonHTML();
+  // Yield a frame so the skeleton paints before the (cache-hit-fast) work below.
+  await new Promise(function(r){ requestAnimationFrame(function(){ setTimeout(r, 0); }); });
+  if(thisReq !== g9ReqId) return;
   var dateFrom, dateTo;
   if(g9State.period==='day'){
     dateFrom = pick;
@@ -5783,8 +5792,11 @@ document.addEventListener('click', function(e){
    Wraps the existing setCmpQuick so the date logic stays in one place. */
 function setCmpQuickSeg(slot){
   var r = getQuickRangeForPeriod(cmpState.period, slot);
-  document.getElementById('cmp-from').value = r[0];
-  document.getElementById('cmp-to').value = r[1];
+  // Fit to the input granularity — a <input type=month> silently drops a full
+  // yyyy-mm-dd value, which left the range blank and made the chart fall back
+  // to whatever data existed (so "last year" showed this year's data).
+  document.getElementById('cmp-from').value = _fitRangeToPeriod(r[0], cmpState.period);
+  document.getElementById('cmp-to').value   = _fitRangeToPeriod(r[1], cmpState.period);
   const seg = document.getElementById('cmp-segment');
   if(seg) seg.querySelectorAll('button').forEach((b,i) => b.classList.toggle('on', i===slot));
   renderCmpChartDebounced();
@@ -5932,15 +5944,17 @@ function _cmpFillPeriods(allPeriods, fromVal, toVal, period){
   }
   var startM = (fromVal ? fromVal.slice(0,7) : (allPeriods[0]||'').slice(0,7));
   var endM   = (toVal   ? toVal.slice(0,7)   : (allPeriods[allPeriods.length-1]||'').slice(0,7));
-  // Don't pad past the last month that actually has data. "This year" ends the
-  // range at today, but if readings only go to April, filling May–Sep with
-  // empty bars just adds clutter and makes "this year" and "last year" look
-  // alike (both trailing blanks). Clamp the end to the newest data month.
-  if(allPeriods.length){
-    var lastDataM = allPeriods[allPeriods.length-1].slice(0,7);
-    if(lastDataM < endM) endM = lastDataM;
+  /* Fill every month in the SELECTED range, even months with no data — so
+     "this year" shows Jan–Dec of this year and "last year" shows Jan–Dec of
+     last year (all empty if there were no readings) instead of silently
+     collapsing to whatever data exists. The selected range (fromVal/toVal)
+     is the source of truth here, never allPeriods, which is why picking a year
+     with no data no longer falls back to showing the current year. */
+  if(!startM || !endM){
+    if(!allPeriods.length) return [];
+    startM = startM || allPeriods[0].slice(0,7);
+    endM   = endM   || allPeriods[allPeriods.length-1].slice(0,7);
   }
-  if(!startM || !endM) return allPeriods.slice();
   var sp = startM.split('-').map(Number);
   var ep = endM.split('-').map(Number);
   var out2 = [];
@@ -5984,13 +5998,20 @@ async function renderCmpChart(){
   var groupKey = document.getElementById('cmp-group').value;
   var el = document.getElementById('cmp-chart-el');
   var sumEl = document.getElementById('cmp-chart-summary');
+  // Skeleton first, before any early return or await, so there is always a
+  // visible "loading" state the instant a render starts — even on a cache hit
+  // that would otherwise swap in the finished chart too fast to notice.
+  if(groupKey) el.innerHTML = chartSkeletonHTML();
   if(!groupKey){ el.innerHTML='<div class="section-empty">เลือกกลุ่ม</div>'; return; }
   var ids = getColIds(groupKey);
   var fromVal = _normRangeStart(document.getElementById('cmp-from').value || '') || null;
   var toVal = _normRangeEnd(document.getElementById('cmp-to').value || '') || null;
   var TC = getThemeColors();
   var MN = ['','ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
-  el.innerHTML = chartSkeletonHTML();
+  // Yield one frame so the browser actually paints the skeleton before the
+  // (possibly synchronous, cache-hit) work below replaces it.
+  await new Promise(function(r){ requestAnimationFrame(function(){ setTimeout(r, 0); }); });
+  if(thisReq !== cmpReqId) return;
   try{
     var gran = cmpState.period === 'day' ? 'day' : 'month';
     var apiToVal = toVal;
