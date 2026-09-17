@@ -37,7 +37,11 @@
   --rd-font-body:    'Inter', 'Sarabun', 'IBM Plex Sans Thai', system-ui, sans-serif;
   --rd-font-mono:    'IBM Plex Mono', 'SF Mono', Consolas, monospace;
   --rd-font-th:      'Sarabun', 'IBM Plex Sans Thai', 'Inter', system-ui, sans-serif;
-
+  /* Button tokens — intentionally do NOT flip with theme. A primary button
+     stays "dark navy bg + white text" in light mode; in dark mode it becomes
+     the cyan accent (dark navy text) so it still reads as the loudest
+     actionable element on the page instead of blending into a light --rd-ink
+     that would otherwise turn white-on-white. */
   --rd-btn-bg:       var(--rd-ink);
   --rd-btn-bg-hover: #1A2B45;
   --rd-btn-text:     #FFFFFF;
@@ -63,6 +67,9 @@
   --rd-shadow:       0 4px 16px rgba(0,0,0,.35);
   --rd-shadow-lg:    0 12px 32px rgba(0,0,0,.45);
 }
+
+/* Fonts are loaded via a single <link> in <head> (see the comment there) —
+   no @import here, which would serialise the fetch behind this stylesheet. */
 
 /* ─── New header ─── */
 .rd-header {
@@ -206,7 +213,9 @@
 
 /* ─── Sidebar drawer ─── */
 .rd-drawer-overlay {
-
+  /* Above #entry-section, which is position:fixed with z-index:100 — the
+     drawer previously sat at 50 and was painted underneath the entry screen,
+     so opening the menu while a meter was open appeared to do nothing. */
   position: fixed; inset: 0;
   background: rgba(10,22,40,.45);
   opacity: 0;
@@ -220,7 +229,9 @@
 .rd-drawer {
   position: fixed;
   top: 0; left: 0;
-
+  /* dvh tracks the *visible* viewport, so the sign-out row at the bottom of
+     the drawer isn't pushed under the mobile browser's toolbar. vh is kept
+     first as the fallback for browsers without dvh support. */
   height: 100vh;
   height: 100dvh;
   width: 280px;
@@ -1494,14 +1505,6 @@ i svg{ width:1em; height:1em; display:inline-block; vertical-align:-0.12em; }
       </div>
       <details class="chart-filters"><summary>ตัวกรอง (ช่วงวัน · มุมมอง · รูปแบบ)</summary>
       <div class="chart-ctrl">
-        <span class="chart-ctrl-label">ช่วงเร็ว:</span>
-        <button class="ctrl-btn yellow" onclick="setCmpQuick('7d')">7 วัน</button>
-        <button class="ctrl-btn yellow" onclick="setCmpQuick('30d')">30 วัน</button>
-        <button class="ctrl-btn yellow" onclick="setCmpQuick('thisM')">เดือนนี้</button>
-        <button class="ctrl-btn yellow" onclick="setCmpQuick('lastM')">เดือนก่อน</button>
-        <button class="ctrl-btn yellow" onclick="setCmpQuick('3m')">3 เดือน</button>
-      </div>
-      <div class="chart-ctrl">
         <span class="chart-ctrl-label">จาก:</span>
         <input class="ctrl-date" type="date" id="cmp-from" onchange="renderCmpChartDebounced()">
         <span class="chart-ctrl-label">ถึง:</span>
@@ -1581,14 +1584,6 @@ i svg{ width:1em; height:1em; display:inline-block; vertical-align:-0.12em; }
         <button data-slot="2" onclick="setSubQuickSeg(2)">3 เดือน</button>
       </div>
       <details class="chart-filters"><summary>ตัวกรอง (ช่วงวัน · มุมมอง · รูปแบบ)</summary>
-      <div class="chart-ctrl">
-        <span class="chart-ctrl-label">ช่วงเร็ว:</span>
-        <button class="ctrl-btn yellow" onclick="setSubQuick('7d')">7 วัน</button>
-        <button class="ctrl-btn yellow" onclick="setSubQuick('30d')">30 วัน</button>
-        <button class="ctrl-btn yellow" onclick="setSubQuick('thisM')">เดือนนี้</button>
-        <button class="ctrl-btn yellow" onclick="setSubQuick('lastM')">เดือนก่อน</button>
-        <button class="ctrl-btn yellow" onclick="setSubQuick('3m')">3 เดือน</button>
-      </div>
       <div class="chart-ctrl">
         <span class="chart-ctrl-label">จาก:</span>
         <input class="ctrl-date" type="date" id="sub-from" onchange="renderSubChart()">
@@ -5462,11 +5457,7 @@ async function renderSubChart(){
   var el = document.getElementById('sub-chart-el');
   var sumEl = document.getElementById('sub-chart-summary');
   if(!meterId){ el.innerHTML='<div class="section-empty">เลือก Meter เพื่อดูกราฟ</div>'; sumEl.innerHTML=''; return; }
-  // Skeleton + a painted frame before the (in-memory, instant) aggregation, so
-  // switching period/range/type shows a brief loading state like the other two
-  // charts instead of appearing frozen then snapping to the new bars.
   el.innerHTML = chartSkeletonHTML();
-  await new Promise(function(r){ requestAnimationFrame(function(){ setTimeout(r, 0); }); });
   var fromVal = _normRangeStart(document.getElementById('sub-from').value || '');
   var toVal = _normRangeEnd(document.getElementById('sub-to').value || '');
   var recs = getSubRecs(meterId);
@@ -5619,9 +5610,6 @@ async function renderG9Chart(){
   else if(g9State.period==='month'){ var pp=pick.split('-'); lbl.textContent=MN[parseInt(pp[1])]+' '+pp[0]; }
   else lbl.textContent = 'ปี '+pick;
   el.innerHTML = chartSkeletonHTML();
-  // Yield a frame so the skeleton paints before the (cache-hit-fast) work below.
-  await new Promise(function(r){ requestAnimationFrame(function(){ setTimeout(r, 0); }); });
-  if(thisReq !== g9ReqId) return;
   var dateFrom, dateTo;
   if(g9State.period==='day'){
     dateFrom = pick;
@@ -5998,20 +5986,13 @@ async function renderCmpChart(){
   var groupKey = document.getElementById('cmp-group').value;
   var el = document.getElementById('cmp-chart-el');
   var sumEl = document.getElementById('cmp-chart-summary');
-  // Skeleton first, before any early return or await, so there is always a
-  // visible "loading" state the instant a render starts — even on a cache hit
-  // that would otherwise swap in the finished chart too fast to notice.
-  if(groupKey) el.innerHTML = chartSkeletonHTML();
   if(!groupKey){ el.innerHTML='<div class="section-empty">เลือกกลุ่ม</div>'; return; }
   var ids = getColIds(groupKey);
   var fromVal = _normRangeStart(document.getElementById('cmp-from').value || '') || null;
   var toVal = _normRangeEnd(document.getElementById('cmp-to').value || '') || null;
   var TC = getThemeColors();
   var MN = ['','ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
-  // Yield one frame so the browser actually paints the skeleton before the
-  // (possibly synchronous, cache-hit) work below replaces it.
-  await new Promise(function(r){ requestAnimationFrame(function(){ setTimeout(r, 0); }); });
-  if(thisReq !== cmpReqId) return;
+  el.innerHTML = chartSkeletonHTML();
   try{
     var gran = cmpState.period === 'day' ? 'day' : 'month';
     var apiToVal = toVal;
