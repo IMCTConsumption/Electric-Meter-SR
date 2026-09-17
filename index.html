@@ -1078,9 +1078,9 @@ i svg{ width:1em; height:1em; display:inline-block; vertical-align:-0.12em; }
     </a>
 
     <div class="rd-login-card">
-      <div class="rd-login-eyebrow" id="rd-login-mode-tag">Recorder access</div>
-      <div class="rd-login-title" id="rd-login-title">Sign in to log Data</div>
-      <div class="rd-login-subtitle" id="rd-login-subtitle">กรอกรหัสผ่านทีมจดมิเตอร์เพื่อเริ่มบันทึกค่า</div>
+      <div class="rd-login-eyebrow" id="rd-login-mode-tag">Select Access Mode</div>
+      <div class="rd-login-title" id="rd-login-title">Please select your access level to continue</div>
+      <div class="rd-login-subtitle" id="rd-login-subtitle">กรุณาเลือกประเภทการเข้าใช้งานเพื่อดำเนินการต่อ</div>
 
 <div id="login-choose">
         <div class="rd-role-pick">
@@ -6134,8 +6134,8 @@ function rdShowAdmin(){
   const title = document.getElementById('rd-login-title');
   const sub = document.getElementById('rd-login-subtitle');
   if (tag)   tag.textContent   = 'Admin access';
-  if (title) title.textContent = 'Administrator sign-in';
-  if (sub)   sub.textContent   = 'สำหรับผู้ดูแลระบบ / ทีม IT';
+  if (title) title.textContent = 'System Administrator sign-in';
+  if (sub)   sub.textContent   = 'จัดการมิเตอร์และตั้งค่าระบบ';
 }
 function rdShowRecorder(){
   showRecorderLogin();
@@ -6152,8 +6152,8 @@ function rdShowViewer(){
   const title = document.getElementById('rd-login-title');
   const sub = document.getElementById('rd-login-subtitle');
   if (tag)   tag.textContent   = 'Report viewer';
-  if (title) title.textContent = 'Sign in to view reports';
-  if (sub)   sub.textContent   = 'สำหรับผู้บริหาร / ผู้ที่มาดูรายงานการใช้พลังงาน';
+  if (title) title.textContent = 'Sign in to view Reports & Analytics';
+  if (sub)   sub.textContent   = 'ดูรายงานและแนวโน้มการใช้พลังงาน';
 }
 // Keyboard: Enter in recorder passcode → submit
 document.addEventListener('DOMContentLoaded', () => {
