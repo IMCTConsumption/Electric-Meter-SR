@@ -989,7 +989,7 @@ i svg{ width:1em; height:1em; display:inline-block; vertical-align:-0.12em; }
    which is the perceived-speed trick real dashboards use: the wait feels
    shorter when the shape of the result is already on screen. Pure CSS, no JS,
    no layout shift when the real chart replaces it (same min-height). */
-.chart-skeleton{min-height:320px;display:flex;align-items:flex-end;justify-content:space-around;gap:6px;padding:24px 12px 40px}
+.chart-skeleton{height:320px;min-height:320px;display:flex;align-items:flex-end;justify-content:space-around;gap:6px;padding:24px 12px 40px;box-sizing:border-box}
 .chart-skeleton .sk-bar{flex:1;border-radius:4px 4px 0 0;background:linear-gradient(180deg,var(--surface-2),var(--surface-1));animation:sk-pulse 1.2s ease-in-out infinite}
 .chart-skeleton .sk-bar:nth-child(1){height:55%;animation-delay:0s}
 .chart-skeleton .sk-bar:nth-child(2){height:80%;animation-delay:.1s}
@@ -5167,15 +5167,12 @@ function _fitRangeToPeriod(v, period){
   if(period === 'year')  return v.slice(0,4);
   return v;
 }
-/* Shortens Y-axis numbers to rounded units — 2,140,325 → "2.1M", 856,130 →
-   "856K" — instead of long exact figures crowding the axis. Tooltips still show
-   the precise value; this is display-only for the axis ticks. */
+/* Y-axis numbers as plain comma-grouped integers (10,000 — not "10K"). The
+   readings are already in kWh, so a "K" suffix reads as ambiguous unit-on-unit
+   ("10K" looks like it could mean 10 kWh or 10,000). Full numbers with commas
+   are unambiguous; the axis has room for them. */
 function _fmtAxisNum(v){
-  v = Number(v) || 0;
-  var a = Math.abs(v);
-  if(a >= 1000000) return (v/1000000).toFixed(a >= 10000000 ? 0 : 1).replace(/\.0$/,'') + 'M';
-  if(a >= 1000)    return (v/1000).toFixed(a >= 100000 ? 0 : 1).replace(/\.0$/,'') + 'K';
-  return String(Math.round(v));
+  return Math.round(Number(v) || 0).toLocaleString();
 }
 function _normRangeStart(v){
   v = String(v||'');
