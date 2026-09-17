@@ -3478,8 +3478,23 @@ function previewUsed(){
   if(lastKwh === null){ chip.className = 'chip chip-green'; chip.textContent = '📌 บันทึกครั้งแรกของ Meter นี้'; }
   else {
     const diff = (val - lastKwh) * multiplier;
-    chip.className = diff >= 0 ? 'chip chip-green' : 'chip chip-orange';
-    chip.textContent = diff >= 0 ? `⚡ ใช้ไฟฟ้าไปรอบนี้: +${fmtNum(diff, activeSub.id)} ${UNIT}` : `⚠️ ค่าน้อยกว่าครั้งก่อน (${fmtNum(lastKwh, activeSub.id)})`;
+    if(diff < 0){
+      chip.className = 'chip chip-orange';
+      chip.textContent = `⚠️ ค่าน้อยกว่าครั้งก่อน (${fmtNum(lastKwh, activeSub.id)})`;
+    } else {
+      // Same abnormally-high check the save step runs, surfaced live while
+      // typing: if this round's usage is more than ABNORMAL_MULTIPLIER× the
+      // recent average, warn right away instead of only at save. Lets the
+      // recorder catch a mis-key (extra digit) before committing.
+      const recentAvg = getRecentAvgUsed(activeSub.id);
+      if(recentAvg > 0 && diff > recentAvg * ABNORMAL_MULTIPLIER){
+        chip.className = 'chip chip-orange';
+        chip.textContent = `🔺 สูงผิดปกติ: +${fmtNum(diff, activeSub.id)} ${UNIT} (เฉลี่ย ${fmtNum(recentAvg, activeSub.id)})`;
+      } else {
+        chip.className = 'chip chip-green';
+        chip.textContent = `⚡ ใช้ไฟฟ้าไปรอบนี้: +${fmtNum(diff, activeSub.id)} ${UNIT}`;
+      }
+    }
   }
 }
 function renderRecent(){
