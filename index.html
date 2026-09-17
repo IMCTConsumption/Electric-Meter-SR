@@ -6,24 +6,10 @@
 <title>⚡ ระบบจดบันทึกมิเตอร์ไฟฟ้า Electric Meter SR Plant</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<!-- One combined font request covering every family actually used: Inter (UI),
-     Sarabun (Thai body), IBM Plex Mono (numbers/timestamps). Previously the app
-     pulled fonts from TWO places — this <link> plus a CSS @import lower down —
-     and the first request also loaded IBM Plex Sans Thai at four weights that
-     no rule uses as a primary face (Sarabun covers Thai). The @import was the
-     slower of the two anyway: the browser can't discover it until the main CSS
-     has downloaded and parsed, so it serialised the font fetch behind the
-     stylesheet. Consolidating to this single <link> in <head> removes the
-     duplicate download and lets the fonts start loading immediately. -->
+
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sarabun:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
 
-/* ═══════════════════════════════════════════════════════════
-   REDESIGN LAYER — SESSION 1
-   Design tokens matched to the IMCT Consumption hub (navy + cyan + off-white),
-   with dark-mode parity. Component styles for the new header + sidebar drawer +
-   centered login. All original panel/card/button styles below remain untouched.
-   =========================================================== */
 :root {
   --rd-ink:          #0A1628;
   --rd-ink-2:        #3A4A5F;
@@ -1536,7 +1522,6 @@ i svg{ width:1em; height:1em; display:inline-block; vertical-align:-0.12em; }
         <span class="chart-ctrl-label">มุมมอง:</span>
         <button class="ctrl-btn green" id="cmp-p-day" onclick="setCmpPeriod('day')">รายวัน</button>
         <button class="ctrl-btn" id="cmp-p-month" onclick="setCmpPeriod('month')">รายเดือน</button>
-        <button class="ctrl-btn" id="cmp-p-year" onclick="setCmpPeriod('year')">รายปี</button>
         <div class="ctrl-sep"></div>
         <button class="ctrl-btn on" id="cmp-avg" onclick="toggleCmpOpt('avg')">เส้นเฉลี่ย</button>
         <button class="ctrl-btn on" id="cmp-hol" onclick="toggleCmpOpt('hol')">แยกสีวันหยุด</button>
@@ -1625,7 +1610,6 @@ i svg{ width:1em; height:1em; display:inline-block; vertical-align:-0.12em; }
         <span class="chart-ctrl-label">มุมมอง:</span>
         <button class="ctrl-btn green" id="sub-p-day" onclick="setSubPeriod('day')">รายวัน</button>
         <button class="ctrl-btn" id="sub-p-month" onclick="setSubPeriod('month')">รายเดือน</button>
-        <button class="ctrl-btn" id="sub-p-year" onclick="setSubPeriod('year')">รายปี</button>
         <div class="ctrl-sep"></div>
         <button class="ctrl-btn on" id="sub-avg" onclick="toggleSubOpt('avg')">เส้นเฉลี่ย</button>
         <button class="ctrl-btn on" id="sub-hol" onclick="toggleSubOpt('hol')">แยกสีวันหยุด</button>
@@ -5402,6 +5386,7 @@ function buildChartOpts(dataPoints, state, TC){
             labels:{ rotate:0, rotateAlways:false, hideOverlappingLabels:true, trim:false,
                      style:{fontSize:'11px',colors:TC.text2} } },
     yaxis:{ title:{ text: UNIT, style:{fontSize:'12px', fontWeight:700, color:TC.text2} },
+            min: 0,
             max: yMax,
             labels:{style:{fontSize:'12px',colors:TC.text2}, formatter:v => Math.round(v).toLocaleString()},
             axisBorder:{show:false} },
@@ -5586,8 +5571,27 @@ function initG9Pickers(){
     ySel.value = (prevYear && years.indexOf(prevYear) >= 0) ? prevYear : String(thisYear);
   }
 
-  if(!dates.length) return;
-  document.getElementById('g9-date').value = dates.length >= 2 ? dates[dates.length-2] : dates[dates.length-1];
+  if(!dates.length){
+    /* The chart tab no longer loads the full `records` array, so derive the
+       default day from the latest available month instead of leaving the
+       picker blank (which showed nothing). Uses the last day of the newest
+       month with data, or today if that month is the current one. */
+    if(srcMonths.length){
+      var latestM = srcMonths.slice().sort()[srcMonths.length-1];
+      var now = new Date();
+      var curM = now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');
+      var dEl = document.getElementById('g9-date');
+      if(dEl){
+        if(latestM === curM) dEl.value = ymdLocal(now);
+        else { var pp=latestM.split('-'); var last=new Date(+pp[0], +pp[1], 0).getDate(); dEl.value = latestM+'-'+String(last).padStart(2,'0'); }
+      }
+      var mEl = document.getElementById('g9-month'); if(mEl) mEl.value = latestM;
+    }
+    return;
+  }
+  // Default to the latest day that has data (the most recent reading), so the
+  // main-group chart opens on current data instead of a day back.
+  document.getElementById('g9-date').value = dates[dates.length-1];
   var months = []; dates.forEach(function(d){ var m=d.slice(0,7); if(months.indexOf(m)<0) months.push(m); }); months.sort();
   document.getElementById('g9-month').value = months[months.length-1] || '';
 }
@@ -5928,6 +5932,14 @@ function _cmpFillPeriods(allPeriods, fromVal, toVal, period){
   }
   var startM = (fromVal ? fromVal.slice(0,7) : (allPeriods[0]||'').slice(0,7));
   var endM   = (toVal   ? toVal.slice(0,7)   : (allPeriods[allPeriods.length-1]||'').slice(0,7));
+  // Don't pad past the last month that actually has data. "This year" ends the
+  // range at today, but if readings only go to April, filling May–Sep with
+  // empty bars just adds clutter and makes "this year" and "last year" look
+  // alike (both trailing blanks). Clamp the end to the newest data month.
+  if(allPeriods.length){
+    var lastDataM = allPeriods[allPeriods.length-1].slice(0,7);
+    if(lastDataM < endM) endM = lastDataM;
+  }
   if(!startM || !endM) return allPeriods.slice();
   var sp = startM.split('-').map(Number);
   var ep = endM.split('-').map(Number);
