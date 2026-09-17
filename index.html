@@ -1513,9 +1513,9 @@ i svg{ width:1em; height:1em; display:inline-block; vertical-align:-0.12em; }
         <select class="f-input rd-select-hint" id="cmp-group" onchange="renderCmpChartDebounced()" style="display:none"></select>
       </div>
       <div class="rd-segment" id="cmp-segment">
-        <button data-range="thisM" onclick="setCmpQuickSeg('thisM')">เดือนนี้</button>
-        <button data-range="lastM" onclick="setCmpQuickSeg('lastM')">เดือนก่อน</button>
-        <button data-range="3m" onclick="setCmpQuickSeg('3m')">3 เดือน</button>
+        <button data-slot="0" class="on" onclick="setCmpQuickSeg(0)">เดือนนี้</button>
+        <button data-slot="1" onclick="setCmpQuickSeg(1)">เดือนก่อน</button>
+        <button data-slot="2" onclick="setCmpQuickSeg(2)">3 เดือน</button>
       </div>
       <details class="chart-filters"><summary>ตัวกรอง (ช่วงวัน · มุมมอง · รูปแบบ)</summary>
       <div class="chart-ctrl">
@@ -1602,9 +1602,9 @@ i svg{ width:1em; height:1em; display:inline-block; vertical-align:-0.12em; }
         <select class="f-input" id="chart-sub" onchange="onSubChartMeterChange()" style="display:none"><option value="">เลือก Sub...</option></select>
       </div>
       <div class="rd-segment" id="sub-segment">
-        <button data-range="thisM" onclick="setSubQuickSeg('thisM')">เดือนนี้</button>
-        <button data-range="lastM" onclick="setSubQuickSeg('lastM')">เดือนก่อน</button>
-        <button data-range="3m" onclick="setSubQuickSeg('3m')">3 เดือน</button>
+        <button data-slot="0" class="on" onclick="setSubQuickSeg(0)">เดือนนี้</button>
+        <button data-slot="1" onclick="setSubQuickSeg(1)">เดือนก่อน</button>
+        <button data-slot="2" onclick="setSubQuickSeg(2)">3 เดือน</button>
       </div>
       <details class="chart-filters"><summary>ตัวกรอง (ช่วงวัน · มุมมอง · รูปแบบ)</summary>
       <div class="chart-ctrl">
@@ -3126,7 +3126,7 @@ function goTab(name){
       // consistent with the group chart's segment default.
       var subSeg = document.getElementById('sub-segment');
       if(subSeg && !subSeg.querySelector('button.on')){
-        var d = subSeg.querySelector('button[data-range="thisM"]'); if(d) d.classList.add('on');
+        var d = subSeg.querySelector('button[data-slot="0"]'); if(d) d.classList.add('on');
       }
       /* The card the person sees first — "กราฟเทียบการใช้ไฟฟ้าแต่ละกลุ่ม" — is
          rendered to completion before the second chart even starts. Both used to
@@ -3834,12 +3834,13 @@ function populateDDs(){
 }
 
 /* Segmented range control for the per-meter chart — mirrors setCmpQuickSeg. */
-function setSubQuickSeg(key){
-  setSubQuick(key);
+function setSubQuickSeg(slot){
+  var r = getQuickRangeForPeriod(subChartState.period, slot);
+  document.getElementById('sub-from').value = r[0];
+  document.getElementById('sub-to').value = r[1];
   const seg = document.getElementById('sub-segment');
-  if(seg) seg.querySelectorAll('button').forEach(b => {
-    b.classList.toggle('on', b.getAttribute('data-range') === key);
-  });
+  if(seg) seg.querySelectorAll('button').forEach((b,i) => b.classList.toggle('on', i===slot));
+  renderSubChart();
 }
 
 /* The Data-tab stat tiles were removed: after the rolling 90-day record
@@ -5138,6 +5139,100 @@ function getQuickRange(key){
   return ['',''];
 }
 
+/* Quick-range that respects the current period. The three segment buttons mean
+   different spans depending on whether you're looking at days, months, or
+   years — otherwise "this month" while viewing by-month shows a single bar and
+   looks broken. slot is 0/1/2 (the three buttons left→right); the labels are
+   kept in sync by segmentLabelsFor(). */
+function getQuickRangeForPeriod(period, slot){
+  var today = ymdLocal();
+  var t = new Date(today+'T00:00:00');
+  var fmt = function(dt){ return ymdLocal(dt); };
+  var y = t.getFullYear(), m = t.getMonth();
+  if(period === 'day'){
+    if(slot===0) return [today.slice(0,8)+'01', today];                                  // this month
+    if(slot===1){ var f=new Date(y,m-1,1),l=new Date(y,m,0); return [fmt(f),fmt(l)]; }    // last month
+    var f3=new Date(t); f3.setMonth(f3.getMonth()-2); f3.setDate(1); return [fmt(f3),today]; // 3 months
+  }
+  if(period === 'month'){
+    if(slot===0) return [y+'-01-01', today];                                              // this year
+    if(slot===1) return [(y-1)+'-01-01', (y-1)+'-12-31'];                                 // last year
+    return [(y-2)+'-01-01', today];                                                       // 3 years
+  }
+  // year
+  if(slot===0) return [(y-2)+'-01-01', today];                                            // 3 years
+  if(slot===1) return [(y-4)+'-01-01', today];                                            // 5 years
+  return ['', today];                                                                     // all
+}
+function segmentLabelsFor(period){
+  if(period === 'day')   return ['เดือนนี้','เดือนก่อน','3 เดือน'];
+  if(period === 'month') return ['ปีนี้','ปีก่อน','3 ปี'];
+  return ['3 ปี','5 ปี','ทั้งหมด'];
+}
+/* Re-labels a segment control and applies the slot that's currently active
+   (default slot 0) for the new period. Called whenever period changes. */
+function applySegmentForPeriod(segId, period, applyFn){
+  var seg = document.getElementById(segId);
+  if(!seg) return;
+  var labels = segmentLabelsFor(period);
+  var btns = seg.querySelectorAll('button');
+  var activeSlot = 0;
+  btns.forEach(function(b,i){ if(b.classList.contains('on')) activeSlot=i; });
+  btns.forEach(function(b,i){ if(labels[i]!==undefined) b.textContent = labels[i]; b.setAttribute('data-slot', i); });
+  // re-apply the active slot's range under the new period
+  applyFn(activeSlot);
+}
+
+/* Switches the from/to range inputs between date / month / year controls to
+   match the period, and converts whatever value they hold so it stays valid
+   for the new input type — a <input type=date> value "2026-09-15" becomes
+   "2026-09" for month, "2026" for year, and back to a real day on the way
+   down. Without the conversion the browser silently blanks a value that
+   doesn't fit the new type, which looked like the range had been lost. The
+   YEAR case has no native input, so it swaps in a plain text field range —
+   two 4-digit years — kept minimal on purpose. Prefix is 'cmp' or 'sub'. */
+function _fitRangeToPeriod(v, period){
+  v = String(v||'');
+  if(period === 'month') return v.slice(0,7);
+  if(period === 'year')  return v.slice(0,4);
+  return v;
+}
+function _normRangeStart(v){
+  v = String(v||'');
+  if(/^\d{4}$/.test(v)) return v+'-01-01';
+  if(/^\d{4}-\d{2}$/.test(v)) return v+'-01';
+  return v;
+}
+function _normRangeEnd(v){
+  v = String(v||'');
+  if(/^\d{4}$/.test(v)) return v+'-12-31';
+  if(/^\d{4}-\d{2}$/.test(v)){ var p=v.split('-'); var last=new Date(+p[0], +p[1], 0).getDate(); return v+'-'+String(last).padStart(2,'0'); }
+  return v;
+}
+function setRangeInputType(prefix, period){
+  var fromEl = document.getElementById(prefix+'-from');
+  var toEl   = document.getElementById(prefix+'-to');
+  if(!fromEl || !toEl) return;
+  var wantType = period === 'day' ? 'date' : period === 'month' ? 'month' : 'text';
+  [fromEl, toEl].forEach(function(el){
+    var v = el.value || '';
+    if(el.type !== wantType){
+      // convert current value to the granularity of the new type
+      if(wantType === 'month')      v = v.slice(0,7);                       // yyyy-mm-dd → yyyy-mm ; yyyy → yyyy (browser fills)
+      else if(wantType === 'text')  v = v.slice(0,4);                       // → yyyy
+      else if(wantType === 'date'){                                         // widen back to a real day
+        if(/^\d{4}-\d{2}$/.test(v)) v = v + '-01';
+        else if(/^\d{4}$/.test(v))  v = v + '-01-01';
+      }
+      el.type = wantType;
+      if(wantType === 'text'){ el.placeholder = 'ปี (พ.ศ.ค.ศ. เช่น 2026)'; el.setAttribute('inputmode','numeric'); el.maxLength = 4; }
+      else { el.removeAttribute('placeholder'); el.removeAttribute('inputmode'); el.removeAttribute('maxLength'); }
+    }
+    el.value = v;
+  });
+}
+
+
 /* Cache for aggregateRecords keyed by meter+period+range+data-signature.
    Switching bar<->line or toggling avg/holiday re-renders the chart but does
    NOT change the aggregated buckets, so recomputing them on every toggle was
@@ -5256,6 +5351,20 @@ function buildChartOpts(dataPoints, state, TC){
   const chartType = state.type === 'bar' ? 'bar' : 'line';
   const useHolSplit = state.period === 'day' && state.showHol && chartType === 'bar';
 
+  /* Cap the Y axis just above the tallest value (bar or the average line,
+     whichever is higher) so bars fill the plot instead of sitting at ~40%
+     height. ApexCharts' automatic max leaves a lot of empty headroom; pinning
+     it to peak × 1.15 keeps a small margin above the top bar without the waste.
+     Falls back to undefined (auto) when there's no positive value, so an
+     all-zero range still renders sanely. */
+  let _peak = 0;
+  dataPoints.forEach(d => { if(d.value > _peak) _peak = d.value; });
+  if(state.showAvg){
+    const _avgForMax = state.period === 'day' ? Math.max(avgWork, avgHol) : avg;
+    if(_avgForMax > _peak) _peak = _avgForMax;
+  }
+  const yMax = _peak > 0 ? Math.ceil(_peak * 1.15) : undefined;
+
   let series, chartColors;
   if(useHolSplit){
     const workData = dataPoints.map(d => d.hol ? null : Math.round(d.value));
@@ -5293,6 +5402,7 @@ function buildChartOpts(dataPoints, state, TC){
             labels:{ rotate:0, rotateAlways:false, hideOverlappingLabels:true, trim:false,
                      style:{fontSize:'11px',colors:TC.text2} } },
     yaxis:{ title:{ text: UNIT, style:{fontSize:'12px', fontWeight:700, color:TC.text2} },
+            max: yMax,
             labels:{style:{fontSize:'12px',colors:TC.text2}, formatter:v => Math.round(v).toLocaleString()},
             axisBorder:{show:false} },
     grid:{ borderColor:TC.border, strokeDashArray:3, xaxis:{lines:{show:false}}, yaxis:{lines:{show:true}} },
@@ -5336,6 +5446,13 @@ function setSubPeriod(p){
   });
   var holBtn = document.getElementById('sub-hol');
   if(holBtn) holBtn.style.display = p==='day' ? '' : 'none';
+  // Switch inputs to match period before the segment writes range values.
+  setRangeInputType('sub', p);
+  applySegmentForPeriod('sub-segment', p, function(slot){
+    var r = getQuickRangeForPeriod(p, slot);
+    document.getElementById('sub-from').value = _fitRangeToPeriod(r[0], p);
+    document.getElementById('sub-to').value   = _fitRangeToPeriod(r[1], p);
+  });
   renderSubChart();
 }
 function setSubType(t){
@@ -5359,8 +5476,8 @@ function renderSubChart(){
   var el = document.getElementById('sub-chart-el');
   var sumEl = document.getElementById('sub-chart-summary');
   if(!meterId){ el.innerHTML='<div class="section-empty">เลือก Meter เพื่อดูกราฟ</div>'; sumEl.innerHTML=''; return; }
-  var fromVal = document.getElementById('sub-from').value || '';
-  var toVal = document.getElementById('sub-to').value || '';
+  var fromVal = _normRangeStart(document.getElementById('sub-from').value || '');
+  var toVal = _normRangeEnd(document.getElementById('sub-to').value || '');
   var recs = getSubRecs(meterId);
   if(fromVal) recs = recs.filter(function(r){return r.date >= fromVal;});
   if(toVal) recs = recs.filter(function(r){return r.date <= toVal;});
@@ -5660,12 +5777,13 @@ document.addEventListener('click', function(e){
 
 /* Segmented range control — sets the date range AND lights the active segment.
    Wraps the existing setCmpQuick so the date logic stays in one place. */
-function setCmpQuickSeg(key){
-  setCmpQuick(key);
+function setCmpQuickSeg(slot){
+  var r = getQuickRangeForPeriod(cmpState.period, slot);
+  document.getElementById('cmp-from').value = r[0];
+  document.getElementById('cmp-to').value = r[1];
   const seg = document.getElementById('cmp-segment');
-  if(seg) seg.querySelectorAll('button').forEach(b => {
-    b.classList.toggle('on', b.getAttribute('data-range') === key);
-  });
+  if(seg) seg.querySelectorAll('button').forEach((b,i) => b.classList.toggle('on', i===slot));
+  renderCmpChartDebounced();
 }
 
 function getColIds(key){
@@ -5752,6 +5870,16 @@ function setCmpPeriod(p){
     var el = document.getElementById('cmp-p-'+k);
     if(el) el.className = k===p ? 'ctrl-btn green' : 'ctrl-btn';
   });
+  // Switch the from/to inputs to the right control BEFORE the segment writes
+  // its range values, so the values land in a matching input type.
+  setRangeInputType('cmp', p);
+  applySegmentForPeriod('cmp-segment', p, function(slot){
+    var r = getQuickRangeForPeriod(p, slot);
+    // Fit the range to the input granularity so a month/year control accepts it
+    // (a <input type=month> silently rejects "2026-01-01").
+    document.getElementById('cmp-from').value = _fitRangeToPeriod(r[0], p);
+    document.getElementById('cmp-to').value   = _fitRangeToPeriod(r[1], p);
+  });
   renderCmpChartDebounced();
 }
 function setCmpType(t){
@@ -5833,7 +5961,7 @@ function initCmpPickers(){
   if(seg){
     var active = seg.querySelector('button.on');
     if(!active){
-      var thisM = seg.querySelector('button[data-range="thisM"]');
+      var thisM = seg.querySelector('button[data-slot="0"]');
       if(thisM) thisM.classList.add('on');
     }
   }
@@ -5846,8 +5974,8 @@ async function renderCmpChart(){
   var sumEl = document.getElementById('cmp-chart-summary');
   if(!groupKey){ el.innerHTML='<div class="section-empty">เลือกกลุ่ม</div>'; return; }
   var ids = getColIds(groupKey);
-  var fromVal = document.getElementById('cmp-from').value || null;
-  var toVal = document.getElementById('cmp-to').value || null;
+  var fromVal = _normRangeStart(document.getElementById('cmp-from').value || '') || null;
+  var toVal = _normRangeEnd(document.getElementById('cmp-to').value || '') || null;
   var TC = getThemeColors();
   var MN = ['','ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
   el.innerHTML = chartSkeletonHTML();
