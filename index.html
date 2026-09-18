@@ -2135,7 +2135,7 @@ async function handleRecorderLogin(){
   const originalHTML = loginBtn.innerHTML;
   loginBtn.disabled = true; loginBtn.innerHTML = '⏳ กำลังตรวจสอบ...';
   try{
-    const res = await apiPost({ action:'login', username:'recorder', password:passVal });
+    const res = await apiPost({ action:'login', username:'recorder', password:passVal, meterIds: subs.map(s => s.id) });
     if(res && res.success){
       currentUser = res.name || 'ทีมจดมิเตอร์';
       sessionToken = res.token || null;
@@ -2144,7 +2144,18 @@ async function handleRecorderLogin(){
       lsSetRaw('loginMode','basic');
       document.getElementById('recorder-pass').value = '';
       closeLoginGate();
-      await loadMeterStatus();
+      // The login response already carries meter status (backend folded it in),
+      // so apply it directly instead of a second getMeterStatus round-trip.
+      // Falls back to loadMeterStatus only if the payload wasn't included.
+      if(res.status){
+        meterStatus = res.status;
+        if(res.today) meterStatusToday = res.today;
+        if(res.date)  loggingDayLabel = res.date;
+        if(sessionToken) loadBulkRecent();
+        loadQueue(); startQueueTimer(); flushQueue();
+      } else {
+        await loadMeterStatus();
+      }
       if(pendingQrSub){
         goTab('entry');
         const found = subs.find(s => s.id === pendingQrSub);
@@ -5186,6 +5197,31 @@ function _fitRangeToPeriod(v, period){
    readings are already in kWh, so a "K" suffix reads as ambiguous unit-on-unit
    ("10K" looks like it could mean 10 kWh or 10,000). Full numbers with commas
    are unambiguous; the axis has room for them. */
+/* Rounds a max value UP to a "nice" round number so the axis ticks land on
+   clean figures (250,000 rather than 229,658). Picks a step of 1, 2, or 5 ×
+   the appropriate power of ten — the steps people naturally read a scale in —
+   and rounds the value up to a multiple of it. */
+function _niceCeil(v){
+  v = Number(v) || 0;
+  if(v <= 0) return 0;
+  var mag = Math.pow(10, Math.floor(Math.log10(v)));
+  var norm = v / mag;                     // 1..10
+  // Finer steps than 1/2/5 so the axis doesn't overshoot the data (219k would
+  // jump to 500k on a 1/2/5 scale, squashing the bars); 2.5/3/4 keep the top
+  // close to the peak while still landing on a round tick.
+  var step;
+  if(norm <= 1)      step = 1;
+  else if(norm <= 1.5) step = 1.5;
+  else if(norm <= 2) step = 2;
+  else if(norm <= 2.5) step = 2.5;
+  else if(norm <= 3) step = 3;
+  else if(norm <= 4) step = 4;
+  else if(norm <= 5) step = 5;
+  else if(norm <= 6) step = 6;
+  else if(norm <= 8) step = 8;
+  else               step = 10;
+  return step * mag;
+}
 function _fmtAxisNum(v){
   return Math.round(Number(v) || 0).toLocaleString();
 }
@@ -5355,7 +5391,7 @@ function buildChartOpts(dataPoints, state, TC){
     const _avgForMax = state.period === 'day' ? Math.max(avgWork, avgHol) : avg;
     if(_avgForMax > _peak) _peak = _avgForMax;
   }
-  const yMax = _peak > 0 ? Math.ceil(_peak * 1.15) : undefined;
+  const yMax = _peak > 0 ? _niceCeil(_peak * 1.1) : undefined;
 
   let series, chartColors;
   if(useHolSplit){
@@ -5396,6 +5432,8 @@ function buildChartOpts(dataPoints, state, TC){
     yaxis:{ title:{ text: UNIT, style:{fontSize:'12px', fontWeight:700, color:TC.text2} },
             min: 0,
             max: yMax,
+            tickAmount: 5,
+            forceNiceScale: true,
             labels:{style:{fontSize:'12px',colors:TC.text2}, formatter:v => _fmtAxisNum(v)},
             axisBorder:{show:false} },
     grid:{ borderColor:TC.border, strokeDashArray:3, xaxis:{lines:{show:false}}, yaxis:{lines:{show:true}} },
