@@ -37,11 +37,6 @@
   --rd-font-body:    'Inter', 'Sarabun', 'IBM Plex Sans Thai', system-ui, sans-serif;
   --rd-font-mono:    'IBM Plex Mono', 'SF Mono', Consolas, monospace;
   --rd-font-th:      'Sarabun', 'IBM Plex Sans Thai', 'Inter', system-ui, sans-serif;
-  /* Button tokens — intentionally do NOT flip with theme. A primary button
-     stays "dark navy bg + white text" in light mode; in dark mode it becomes
-     the cyan accent (dark navy text) so it still reads as the loudest
-     actionable element on the page instead of blending into a light --rd-ink
-     that would otherwise turn white-on-white. */
   --rd-btn-bg:       var(--rd-ink);
   --rd-btn-bg-hover: #1A2B45;
   --rd-btn-text:     #FFFFFF;
@@ -2679,6 +2674,9 @@ async function onSubChartMeterChange(){
   if(el && !subChartRecords[meterId]) el.innerHTML = chartSkeletonHTML();
   try { await loadSubChartRecords(meterId); }
   catch(e){ /* fall back to whatever getSubRecs can find in global records */ }
+  // If the user switched to another meter while this one was loading, drop
+  // this stale result — the newer selection's own call will render.
+  if(document.getElementById('chart-sub').value !== meterId) return;
   renderSubChart();
   preloadAdjacentMeter(meterId);
 }
@@ -3684,6 +3682,10 @@ async function saveEdit(){
   if(!date) return toast('เลือกวันที่ด้วย','err');
   const sub = subs.find(s => s.id === newSubId);
   const originalRecord = { ...target };
+  // Version marker captured at edit-open time: the editedTs if this row was
+  // edited before, else its original ts. Sent as baseTs so the backend can
+  // reject if someone else edited the row in the meantime (lost-update guard).
+  const baseTs = originalRecord.editedTs || originalRecord.ts || '';
 
   // Mutate the object itself — it keeps its identity through computeUsed()'s
   // regrouping, so no position needs tracking.
@@ -3703,8 +3705,19 @@ async function saveEdit(){
   closeEdit(); renderAll(); toast('✅ แก้ไขแล้ว (กำลัง sync...)','ok');
   setSyncStatus('busy','กำลังซิงค์...');
   try{
-    const payload = { id:saved.id, meterId:saved.meterId, meterName:saved.meterName, zone:saved.zone, date:saved.date, time:saved.time, kwh:saved.kwh, user:saved.user, note:saved.note, ts:saved.ts, editedTs:saved.editedTs, editedBy:saved.editedBy };
-    await apiPostAuthed({ action:'editRecord', record:payload });
+    const payload = { id:saved.id, meterId:saved.meterId, meterName:saved.meterName, zone:saved.zone, date:saved.date, time:saved.time, kwh:saved.kwh, user:saved.user, note:saved.note, ts:saved.ts, editedTs:saved.editedTs, editedBy:saved.editedBy, baseTs:baseTs };
+    const editRes = await apiPostAuthed({ action:'editRecord', record:payload });
+    if(editRes && editRes.conflict){
+      // Someone edited this row first. Roll back the local change and tell the
+      // user to reload — don't silently keep our version (it would look saved
+      // but the server rejected it).
+      records = records.filter(r => r.id !== recordId);
+      records.push(originalRecord);
+      records = computeUsed(records); persist(); renderAll();
+      setSyncStatus('error','มีการแก้ไขชนกัน');
+      toast('⚠️ ' + (editRes.error || 'รายการถูกแก้โดยผู้อื่น กรุณาโหลดใหม่'), 'err');
+      return;
+    }
     invalidateSummaryCache('editRecord:'+saved.meterId+'@'+saved.date);
     setSyncStatus('ok','แก้ไขสำเร็จ');
   }catch(e){
@@ -5104,6 +5117,7 @@ function renderCost(month){
    ════════════════════════════════════════════════════════════ */
 let subChartInst = null;
 let _subChartStructKey = null;   // 'type:seriesCount' of the live chart, for safe updateOptions reuse
+let subReqId = 0;                // guards against out-of-order renders (rapid meter/period switching)
 let g9ChartInst = null;
 let cmpChartInst = null;
 
@@ -5503,6 +5517,7 @@ function toggleSubOpt(opt){
   renderSubChart();
 }
 async function renderSubChart(){
+  var thisReq = ++subReqId;
   var meterId = document.getElementById('chart-sub').value;
   var el = document.getElementById('sub-chart-el');
   var sumEl = document.getElementById('sub-chart-summary');
@@ -5519,6 +5534,9 @@ async function renderSubChart(){
   var TC = getThemeColors();
   var built = buildChartOpts(data, subChartState, TC);
   ensureApex().then(function(){
+    // Bail if a newer render started while ApexCharts was loading — prevents a
+    // stale meter/range (from a quick switch) overwriting the current one.
+    if(thisReq !== subReqId) return;
     /* Reuse the existing chart instance via updateOptions when the structure
        is unchanged — far smoother and cheaper than destroy+new+render on every
        date-range tweak or refresh. But updateOptions cannot safely morph across
