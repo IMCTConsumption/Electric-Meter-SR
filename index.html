@@ -37,6 +37,11 @@
   --rd-font-body:    'Inter', 'Sarabun', 'IBM Plex Sans Thai', system-ui, sans-serif;
   --rd-font-mono:    'IBM Plex Mono', 'SF Mono', Consolas, monospace;
   --rd-font-th:      'Sarabun', 'IBM Plex Sans Thai', 'Inter', system-ui, sans-serif;
+  /* Button tokens — intentionally do NOT flip with theme. A primary button
+     stays "dark navy bg + white text" in light mode; in dark mode it becomes
+     the cyan accent (dark navy text) so it still reads as the loudest
+     actionable element on the page instead of blending into a light --rd-ink
+     that would otherwise turn white-on-white. */
   --rd-btn-bg:       var(--rd-ink);
   --rd-btn-bg-hover: #1A2B45;
   --rd-btn-text:     #FFFFFF;
@@ -940,7 +945,7 @@ i svg{ width:1em; height:1em; display:inline-block; vertical-align:-0.12em; }
    segment filled, the enterprise-dashboard pattern (Power BI/Grafana). One tap
    switches range; all options visible at once. */
 .rd-segment{display:flex;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:3px;gap:2px;margin-bottom:8px}
-.rd-segment button{flex:1;border:none;background:transparent;color:var(--text-2);font-size:13px;font-family:inherit;padding:8px 4px;border-radius:7px;cursor:pointer;transition:background .12s,color .12s;white-space:nowrap}
+.rd-segment button{flex:1;border:none;background:transparent;color:var(--text-2);font-size:13px;font-family:inherit;padding:8px 4px;border-radius:7px;cursor:pointer;transition:background .12s,color .12s;white-space:nowrap;touch-action:manipulation;-webkit-tap-highlight-color:transparent;user-select:none}
 .rd-segment button:hover{color:var(--text-1)}
 .rd-segment button.on{background:var(--accent);color:var(--bg);font-weight:700}
 /* Custom picker dropdown — replaces the <datalist> approach, which on real
@@ -967,7 +972,7 @@ i svg{ width:1em; height:1em; display:inline-block; vertical-align:-0.12em; }
 .rd-picker-opt.sel{background:var(--accent-dim);color:var(--accent);font-weight:700}
 .rd-picker-empty{padding:14px;text-align:center;color:var(--text-3);font-size:13px}
 .chart-ctrl-label{font-size:11px;color:var(--text-3);margin-right:4px;white-space:nowrap}
-.ctrl-btn{padding:6px 11px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--text-3);transition:all .15s;white-space:nowrap;font-family:var(--font-body)}
+.ctrl-btn{padding:6px 11px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--text-3);transition:all .15s;white-space:nowrap;font-family:var(--font-body);touch-action:manipulation;-webkit-tap-highlight-color:transparent;user-select:none}
 .ctrl-btn:hover{border-color:var(--border-hi);color:var(--text-2)}
 .ctrl-btn.on{border-color:rgba(0,212,255,.4);background:rgba(0,212,255,.12);color:var(--accent)}
 .ctrl-btn.green{border-color:rgba(52,211,153,.4);background:rgba(52,211,153,.12);color:var(--green)}
@@ -2156,6 +2161,11 @@ async function handleRecorderLogin(){
         const found = subs.find(s => s.id === pendingQrSub);
         if(found){ await selectSub(found.id); toast('📍 เปิด ' + found.id + ' จาก QR','ok'); }
         pendingQrSub = null;
+      } else {
+        // Always land a recorder on the entry tab. Without this, logging out of
+        // a viewer/admin session (last tab = chart) and back in as recorder
+        // left the chart tab showing instead of the data-entry screen.
+        goTab('entry');
       }
       renderAll();
     } else {
@@ -2770,12 +2780,18 @@ var CHART_DEBOUNCE_MS = 220;
 function renderCmpChartDebounced(){
   var el = document.getElementById('cmp-chart-el');
   if(el && document.getElementById('cmp-group').value) el.innerHTML = chartSkeletonHTML();
+  // Bump the request id NOW so any render still awaiting its summary fetch sees
+  // itself as stale and bails, instead of racing the debounced one that's about
+  // to fire. Without this a fast series of switches could let an earlier
+  // in-flight render finish last and leave the wrong (or blank) chart.
+  cmpReqId++;
   if(_cmpDebounceTimer) clearTimeout(_cmpDebounceTimer);
   _cmpDebounceTimer = setTimeout(function(){ _cmpDebounceTimer = null; renderCmpChart(); }, CHART_DEBOUNCE_MS);
 }
 function renderG9ChartDebounced(){
   var el = document.getElementById('g9-chart-el');
   if(el) el.innerHTML = chartSkeletonHTML();
+  g9ReqId++;   // invalidate any in-flight render — see the cmp version's comment
   if(_g9DebounceTimer) clearTimeout(_g9DebounceTimer);
   _g9DebounceTimer = setTimeout(function(){ _g9DebounceTimer = null; renderG9Chart(); }, CHART_DEBOUNCE_MS);
 }
@@ -3010,15 +3026,16 @@ async function init(){
         pendingQrSub = null;
       }
     } else {
-      await loadFromServer();
+      // No session but a QR meter is pending: show the picker IMMEDIATELY,
+      // then load in the background. Doing loadFromServer() first (≈5s) left a
+      // stale/default login form flashing on screen until it resolved and
+      // backToChoose() finally ran — the "window appears then disappears" bug.
       backToChoose();
+      loadFromServer();
     }
   } else {
     loadFromServer();
-    // No QR param and no restored session: this is a bare app open, so land
-    // on the three-way picker. Without this, the recorder form was left
-    // showing by default (its only "hidden" state came from the query-param
-    // branch above), so a bare open silently skipped the picker entirely.
+    // No QR param and no restored session: bare app open → three-way picker.
     if(!hasSession) backToChoose();
   }
 }
@@ -6279,8 +6296,6 @@ function rdOpenFirstMatch(){
     .find(c => c.style.display !== 'none');
   if (first) first.click();
 }
-// Sync sync-dot status class from existing sync logic (poll)
-// The original code sets background-color; we mirror it as class for the new dot.
 setInterval(() => {
   const dot = document.getElementById('sync-dot');
   if (!dot) return;
@@ -6295,8 +6310,14 @@ setInterval(() => {
   else if (r > 200 && g < 100) dot.classList.add('err');
 }, 500);
 
-function onTabSummary(){ buildMonthOptions(); populateZoneReportSelect(); loadReport(); loadZoneReport(); }
-function onTabCost(){ buildCostMonthOptions(); loadTariffs().then(() => { renderTariffForms(); loadCostData(); }); }
+async function onTabSummary(){
+  if(!availableMonths) await loadAvailableMonths();
+  buildMonthOptions(); populateZoneReportSelect(); loadReport(); loadZoneReport();
+}
+async function onTabCost(){
+  if(!availableMonths) await loadAvailableMonths();
+  buildCostMonthOptions(); loadTariffs().then(() => { renderTariffForms(); loadCostData(); });
+}
 init();</script>
 </body>
 </html>
