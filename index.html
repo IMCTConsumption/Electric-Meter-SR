@@ -2165,11 +2165,15 @@ async function handleRecorderLogin(){
         meterStatus = res.status;
         if(res.today) meterStatusToday = res.today;
         if(res.date)  loggingDayLabel = res.date;
-        if(sessionToken) loadBulkRecent();
-        loadQueue(); startQueueTimer(); flushQueue();
       } else {
         await loadMeterStatus();
       }
+      // Queue MUST start regardless of which status path ran above — it was
+      // accidentally only inside the res.status branch, so when the backend
+      // didn't fold status in (old deploy, viewer, or an error) the send queue
+      // never auto-flushed and readings piled up locally then vanished on close.
+      if(sessionToken) loadBulkRecent();
+      loadQueue(); startQueueTimer(); flushQueue();
       if(pendingQrSub){
         goTab('entry');
         const found = subs.find(s => s.id === pendingQrSub);
@@ -4106,8 +4110,9 @@ document.addEventListener('DOMContentLoaded', () => {
    second row. That is what makes retrying safe to do automatically.
    ════════════════════════════════════════════════════════════ */
 const QUEUE_KEY          = 'sendQueue';
-const QUEUE_RETRY_MS     = 30000;   // background sweep interval
+const QUEUE_RETRY_MS     = 10000;   // background sweep interval (was 30s — too slow for a 100+ meter round)
 const QUEUE_MAX_ATTEMPTS = 5;       // after this it waits for a manual push
+const QUEUE_BATCH_SIZE   = 25;      // records per saveRecordsBatch call
 
 let sendQueue = [];
 let _queueTimer = null;
@@ -4140,24 +4145,54 @@ async function flushQueue(manual){
   if(!sessionToken){ renderQueueBanner(); return; }
   _queueRunning = true;
   try{
+    // Send in batches instead of one record per round-trip. A 100+ meter round
+    // used to fire 100+ serial /exec calls (minutes total), so the tail never
+    // reached the server before the app closed. One batch call carries many
+    // records; the server returns a per-record result so we drop exactly the
+    // saved/duplicate ones and keep only real failures queued.
     while(sendQueue.length){
-      const item = sendQueue[0];
-      if(!manual && item.attempts >= QUEUE_MAX_ATTEMPTS) break;   // parked; wait for a manual push
+      // Take a window of not-yet-parked items from the front.
+      const batch = [];
+      for(let i=0; i<sendQueue.length && batch.length<QUEUE_BATCH_SIZE; i++){
+        if(!manual && sendQueue[i].attempts >= QUEUE_MAX_ATTEMPTS) break;   // hit a parked item — stop the window
+        batch.push(sendQueue[i]);
+      }
+      if(!batch.length) break;   // everything at the front is parked
       try{
-        const r = item.rec;
-        const payload = { id:r.id, meterId:r.meterId, meterName:r.meterName, zone:r.zone,
-                          date:r.date, time:r.time, kwh:r.kwh, user:r.user, note:r.note,
-                          ts:r.ts, editedTs:'', editedBy:'' };
-        const res = await apiPost({ action:'saveRecord', record:payload, token: sessionToken });
+        const records = batch.map(it => {
+          const r = it.rec;
+          return { id:r.id, meterId:r.meterId, meterName:r.meterName, zone:r.zone,
+                   date:r.date, time:r.time, kwh:r.kwh, user:r.user, note:r.note,
+                   ts:r.ts, editedTs:'', editedBy:'' };
+        });
+        const res = await apiPost({ action:'saveRecordsBatch', records: records, token: sessionToken });
         if(!res || res.success === false) throw new Error((res && res.error) || 'บันทึกไม่สำเร็จ');
-        sendQueue.shift();
+        // Drop the records the server confirmed (saved or duplicate); keep the
+        // rest queued with an incremented attempt count.
+        const byId = {};
+        (res.results || []).forEach(r => { if(r && r.id) byId[String(r.id)] = r; });
+        const affectedMonths = {};
+        for(const it of batch){
+          const rr = byId[String(it.rec.id)];
+          if(rr && rr.success){
+            const idx = sendQueue.indexOf(it);
+            if(idx >= 0) sendQueue.splice(idx, 1);
+            affectedMonths[it.rec.meterId+'@'+it.rec.date] = true;
+          } else {
+            it.attempts++;
+            it.lastError = (rr && rr.error) || 'บันทึกไม่สำเร็จ';
+          }
+        }
         persistQueue();
-        invalidateSummaryCache('saveRecord:'+r.meterId+'@'+r.date);
+        Object.keys(affectedMonths).forEach(k => invalidateSummaryCache('batch:'+k));
+        // If nothing in this window got removed, stop to avoid a tight loop.
+        if(batch.every(it => sendQueue.indexOf(it) >= 0)) break;
       }catch(e){
-        item.attempts++;
-        item.lastError = e.message || 'error';
+        // Whole-batch failure (network/timeout): bump attempts on the window
+        // and stop; the timer retries.
+        batch.forEach(it => { it.attempts++; it.lastError = e.message || 'error'; });
         persistQueue();
-        break;                 // stop the sweep; the timer will come back
+        break;
       }
     }
   } finally {
