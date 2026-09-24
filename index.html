@@ -6,10 +6,24 @@
 <title>⚡ ระบบจดบันทึกมิเตอร์ไฟฟ้า Electric Meter SR Plant</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-
+<!-- One combined font request covering every family actually used: Inter (UI),
+     Sarabun (Thai body), IBM Plex Mono (numbers/timestamps). Previously the app
+     pulled fonts from TWO places — this <link> plus a CSS @import lower down —
+     and the first request also loaded IBM Plex Sans Thai at four weights that
+     no rule uses as a primary face (Sarabun covers Thai). The @import was the
+     slower of the two anyway: the browser can't discover it until the main CSS
+     has downloaded and parsed, so it serialised the font fetch behind the
+     stylesheet. Consolidating to this single <link> in <head> removes the
+     duplicate download and lets the fonts start loading immediately. -->
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sarabun:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
 
+/* ═══════════════════════════════════════════════════════════
+   REDESIGN LAYER — SESSION 1
+   Design tokens matched to the IMCT Consumption hub (navy + cyan + off-white),
+   with dark-mode parity. Component styles for the new header + sidebar drawer +
+   centered login. All original panel/card/button styles below remain untouched.
+   =========================================================== */
 :root {
   --rd-ink:          #0A1628;
   --rd-ink-2:        #3A4A5F;
@@ -4542,7 +4556,7 @@ async function loadReport(){
   // ดึงเพิ่ม 7 วันหลังสิ้นเดือน เพื่อให้วันสุดท้ายคำนวณ used ได้
   const extDate  = new Date(parseInt(y), parseInt(m)-1, lastDay+7);
   const dateTo   = `${extDate.getFullYear()}-${String(extDate.getMonth()+1).padStart(2,'0')}-${String(extDate.getDate()).padStart(2,'0')}`;
-  document.getElementById('report-area').innerHTML = '<div class="section-empty">⏳ กำลังโหลด...</div>';
+  document.getElementById('report-area').innerHTML = chartSkeletonHTML();
   try{
     const res = await getSummaryCached(dateFrom, dateTo, 'day');
     if(thisReq !== reportReqId) return; // stale request — discard
@@ -4560,6 +4574,12 @@ async function loadReport(){
 function renderReport(month, lastDay){
   const area = document.getElementById('report-area');
   if(!reportRaw.length){ area.innerHTML = '<div class="section-empty">📭 ไม่มีข้อมูลเดือนนี้</div>'; return; }
+  // Cache the group lists once. _grpMain/_grpUtil each run a
+  // .filter() over every group, and they were being called inside the per-day
+  // loop (and again per header/cell) — hundreds of redundant filters on a
+  // 30-day × many-group report. Computing them once here is the main speedup.
+  const _grpMain = reportGroupsMain();
+  const _grpUtil = reportGroupsUtil();
   const _plMap = perfLabel('buildMeterDayMap'); perfStart(_plMap);
   const meterMap = buildMeterDayMap();
   perfEnd(_plMap);
@@ -4570,19 +4590,19 @@ function renderReport(month, lastDay){
   const _plRows = perfLabel('renderReport:rowsCompute'); perfStart(_plRows);
   const rows = days.map(dateStr => {
     const cells = {};
-    reportGroupsMain().forEach(c => cells[c.key] = sumGroupOnDay(meterMap, c, dateStr, allDates));
-    reportGroupsUtil().forEach(c => cells[c.key] = sumGroupOnDay(meterMap, c, dateStr, allDates));
+    _grpMain.forEach(c => cells[c.key] = sumGroupOnDay(meterMap, c, dateStr, allDates));
+    _grpUtil.forEach(c => cells[c.key] = sumGroupOnDay(meterMap, c, dateStr, allDates));
     let utilTotal = 0, utilHas = false;
-    reportGroupsUtil().forEach(c => { if(cells[c.key] !== null){ utilTotal += cells[c.key]; utilHas = true; } });
+    _grpUtil.forEach(c => { if(cells[c.key] !== null){ utilTotal += cells[c.key]; utilHas = true; } });
     cells['UTILITY'] = utilHas ? utilTotal : null;
     let mainTotal = 0, mainHas = false;
-    reportGroupsMain().forEach(c => { if(cells[c.key] !== null){ mainTotal += cells[c.key]; mainHas = true; } });
+    _grpMain.forEach(c => { if(cells[c.key] !== null){ mainTotal += cells[c.key]; mainHas = true; } });
     cells['TOTAL'] = (mainHas || utilHas) ? (mainTotal + utilTotal) : null;
     return { dateStr, cells };
   });
 
   const totals = {};
-  [...reportGroupsMain().map(c=>c.key), ...reportGroupsUtil().map(c=>c.key), 'UTILITY','TOTAL'].forEach(k => {
+  [..._grpMain.map(c=>c.key), ..._grpUtil.map(c=>c.key), 'UTILITY','TOTAL'].forEach(k => {
     totals[k] = rows.reduce((a,r) => a + (r.cells[k]||0), 0);
   });
   perfEnd(_plRows);
@@ -4591,13 +4611,13 @@ function renderReport(month, lastDay){
   const fmtCell = v => v === null ? '<span style="color:var(--text-3)">—</span>' : Math.round(v).toLocaleString();
   const MN = ['','ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
   const [yy,mm] = month.split('-');
-  const headMain = reportGroupsMain().map(c => `<th style="text-align:right;padding:6px 8px;min-width:64px">${c.name}</th>`).join('');
-  const headUtil = reportGroupsUtil().map(c => `<th style="text-align:right;padding:6px 8px;min-width:64px;color:var(--purple)">${c.name}</th>`).join('');
+  const headMain = _grpMain.map(c => `<th style="text-align:right;padding:6px 8px;min-width:64px">${c.name}</th>`).join('');
+  const headUtil = _grpUtil.map(c => `<th style="text-align:right;padding:6px 8px;min-width:64px;color:var(--purple)">${c.name}</th>`).join('');
 
   const bodyRows = rows.map(r => {
     const dnum = parseInt(r.dateStr.split('-')[2]);
-    const mainCells = reportGroupsMain().map(c => `<td style="text-align:right;padding:5px 8px">${fmtCell(r.cells[c.key])}</td>`).join('');
-    const utilCells = reportGroupsUtil().map(c => `<td style="text-align:right;padding:5px 8px;color:var(--text-2)">${fmtCell(r.cells[c.key])}</td>`).join('');
+    const mainCells = _grpMain.map(c => `<td style="text-align:right;padding:5px 8px">${fmtCell(r.cells[c.key])}</td>`).join('');
+    const utilCells = _grpUtil.map(c => `<td style="text-align:right;padding:5px 8px;color:var(--text-2)">${fmtCell(r.cells[c.key])}</td>`).join('');
     return `<tr>
       <td style="padding:5px 8px;font-weight:600;color:var(--accent);position:sticky;left:0;background:var(--surface-1)">${dnum}/${parseInt(mm)}</td>
       ${mainCells}
@@ -4607,8 +4627,8 @@ function renderReport(month, lastDay){
     </tr>`;
   }).join('');
 
-  const totMain = reportGroupsMain().map(c => `<td style="text-align:right;padding:7px 8px;font-weight:700">${Math.round(totals[c.key]).toLocaleString()}</td>`).join('');
-  const totUtil = reportGroupsUtil().map(c => `<td style="text-align:right;padding:7px 8px;font-weight:700;color:var(--purple)">${Math.round(totals[c.key]).toLocaleString()}</td>`).join('');
+  const totMain = _grpMain.map(c => `<td style="text-align:right;padding:7px 8px;font-weight:700">${Math.round(totals[c.key]).toLocaleString()}</td>`).join('');
+  const totUtil = _grpUtil.map(c => `<td style="text-align:right;padding:7px 8px;font-weight:700;color:var(--purple)">${Math.round(totals[c.key]).toLocaleString()}</td>`).join('');
 
   area.innerHTML = `
     <div style="font-size:13px;font-weight:700;margin-bottom:8px;text-align:center">รายละเอียดปริมาณการใช้ไฟฟ้าแต่ละ SUBSTATION · ${MN[parseInt(mm)]} ${yy}</div>
@@ -4664,12 +4684,19 @@ function populateZoneReportSelect(){
   const sel = document.getElementById('zone-rep-select');
   if(!sel) return;
   const prev = sel.value;
-  // นับจำนวน sub ต่อ zone จาก subs จริง (ไม่ใช้ zone ที่ไม่มี sub อยู่เลย กันตัวเลือกว่างเปล่า)
-  const counts = {};
-  subs.forEach(s => { const cat = zoneName(s.zone); counts[cat] = (counts[cat]||0) + 1; });
-  const cats = reportGroups.filter(g => counts[g.name] > 0).map(g => ({ name:g.name, icon:g.icon||'📦' }));
-  sel.innerHTML = cats.map(c => `<option value="${c.name}">${c.icon} ${c.name} (${counts[c.name]})</option>`).join('');
-  if(prev && counts[prev]) sel.value = prev;
+  // Show every report group that actually has meters, counted from the group's
+  // own meter list (group.meters) rather than from meter.zone. A group's
+  // membership is defined by group.meters — meter.zone is a separate label that
+  // doesn't always equal the group key/name, so counting by zone dropped any
+  // group whose meters carried a different zone string, leaving the dropdown
+  // short. A meter still present in subs is what counts.
+  const known = {};
+  subs.forEach(s => { known[s.id] = true; });
+  const cats = reportGroups
+    .map(g => ({ name:g.name, icon:g.icon||'📦', count:(g.meters||[]).filter(id => known[id]).length }))
+    .filter(g => g.count > 0);
+  sel.innerHTML = cats.map(c => `<option value="${c.name}">${c.icon} ${c.name} (${c.count})</option>`).join('');
+  if(prev && cats.some(c => c.name === prev)) sel.value = prev;
 }
 
 /* ── renderZoneReport ── */
@@ -4681,7 +4708,12 @@ function renderZoneReport(){
   const month = document.getElementById('zone-rep-month')?.value;
   if(!month){ area.innerHTML = '<div class="section-empty">เลือกเดือนก่อน</div>'; zoneReportComputed = null; return; }
 
-  const zoneSubs = subs.filter(s => zoneName(s.zone) === selectedZone);
+  // selectedZone is a group NAME (from the dropdown). Resolve it to that group's
+  // meter list and pull those meters from subs — consistent with how the
+  // dropdown is now built (by group.meters, not meter.zone).
+  const selGroup = reportGroups.find(g => g.name === selectedZone);
+  const selIds = selGroup ? (selGroup.meters || []) : [];
+  const zoneSubs = subs.filter(s => selIds.indexOf(s.id) >= 0);
   if(!zoneSubs.length){ area.innerHTML = '<div class="section-empty">ไม่มีมิเตอร์ใน Zone นี้</div>'; zoneReportComputed = null; return; }
 
   const [y,m] = month.split('-');
@@ -4999,7 +5031,18 @@ function buildCostMonthOptions(){
     const p = m.split('-');
     return '<option value="' + m + '">' + MN[parseInt(p[1])] + ' ' + p[0] + '</option>';
   }).join('');
-  if(prev && months.indexOf(prev) >= 0) sel.value = prev;
+  // Default to the newest month that actually HAS data, not the newest option
+  // (the list includes the current month + next two for entering rates ahead of
+  // readings, so the very first option is usually an empty future month —
+  // landing there showed "ไม่มีข้อมูลเดือนนี้" and looked like cost wasn't
+  // working). Keep the user's prior pick if still valid.
+  if(prev && months.indexOf(prev) >= 0){
+    sel.value = prev;
+  } else if(availableMonths && availableMonths.length){
+    sel.value = availableMonths[0];   // availableMonths is newest-first, data-backed
+  } else if(months.length){
+    sel.value = months[months.length - 1];   // fallback: oldest listed
+  }
 }
 
 let costRaw = [];
@@ -5008,6 +5051,11 @@ async function loadCostData(){
   const box = document.getElementById('cost-body');
   if(!box) return;
   if(appMode !== 'admin'){ box.innerHTML = '<div class="section-empty">เฉพาะแอดมิน</div>'; return; }
+  // Ensure tariff rates are loaded before computing. The Calculate button calls
+  // this directly (not via the onTabCost chain that loads tariffs first), so
+  // without this a fresh click — or a tab where the initial tariff load hadn't
+  // finished — computed with no rates and showed every rate as "—" / 0.
+  if(!tariffRows || !tariffRows.length) await loadTariffs();
   buildCostMonthOptions();
   const sel = document.getElementById('cost-month');
   const month = sel ? sel.value : '';
@@ -6296,6 +6344,8 @@ function rdOpenFirstMatch(){
     .find(c => c.style.display !== 'none');
   if (first) first.click();
 }
+// Sync sync-dot status class from existing sync logic (poll)
+// The original code sets background-color; we mirror it as class for the new dot.
 setInterval(() => {
   const dot = document.getElementById('sync-dot');
   if (!dot) return;
@@ -6310,11 +6360,43 @@ setInterval(() => {
   else if (r > 200 && g < 100) dot.classList.add('err');
 }, 500);
 
+
+/* init() is called here — the true end of the concatenated script — rather
+   than at the end of core-head.js where it used to sit. Everything init()
+   can reach (directly or through restoreSession()'s auto-goTab for a
+   restored viewer session, for instance) must have its declarations already
+   executed: g9ChartInst/cmpChartInst/subChartInst live in this file, and
+   tariffRows/reportRaw/summaryData live in the per-app modules that get
+   concatenated between core-head and this file.
+
+   It has not broken anything so far only because every path from init() to
+   those variables happens to cross an `await` first (restoreSession -> goTab
+   -> renderCmpChart -> await getSummaryCached(...) -> THEN touches
+   cmpChartInst) — and `await` always defers to the microtask queue, so the
+   rest of this synchronous script (including the declarations below) runs to
+   completion before the resumed code can reach them. That is correct by
+   accident, not by design: a future synchronous code path with no await in
+   between would throw "Cannot access before initialization". Calling init()
+   only after every file has executed removes the dependency on that
+   coincidence entirely. */
+/* init() itself is called by build.js, appended after everything else in the
+   generated file (including the per-app tab hooks below this point in the
+   build) — see the comment above and tools/build.js. This guarantees "last"
+   means last regardless of what future modules or hooks get added between
+   core-head and here. */
+
+/* ── generated tab hooks (see build.js) ── */
 async function onTabSummary(){
+  // Load the month list from the server first — the summary tab no longer
+  // loads the full records array, so buildMonthOptions has nothing to build the
+  // dropdown from until availableMonths arrives. Without the await the month
+  // picker rendered empty ("ไม่มีข้อมูล") on first open.
   if(!availableMonths) await loadAvailableMonths();
   buildMonthOptions(); populateZoneReportSelect(); loadReport(); loadZoneReport();
 }
 async function onTabCost(){
+  // Same as onTabSummary: ensure the month list is loaded before building the
+  // cost month dropdown, which reads availableMonths (records aren't loaded here).
   if(!availableMonths) await loadAvailableMonths();
   buildCostMonthOptions(); loadTariffs().then(() => { renderTariffForms(); loadCostData(); });
 }
