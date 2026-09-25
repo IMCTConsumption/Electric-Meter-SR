@@ -2421,25 +2421,79 @@ async function _apiPump(){
   } finally { _apiBusy = false; }
 }
 
-async function _apiPostNow(body, retries = 2){
+async function _apiPostNow(body, retries = 2) {
   const timeoutMs = (body && SLOW_ACTIONS[body.action]) || 12000;
-  for(let attempt = 0; attempt <= retries; attempt++){
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
     const ctrl = new AbortController();
-    const tid  = setTimeout(() => ctrl.abort(), timeoutMs);
-    try{
-      const res  = await fetch(API_URL, { method:'POST', body:JSON.stringify(body), signal:ctrl.signal });
+
+    let timedOut = false;
+
+    const tid = setTimeout(() => {
+      timedOut = true;
+      ctrl.abort();
+    }, timeoutMs);
+
+    try {
+      console.log(
+        `🌐 API ${body?.action} attempt ${attempt + 1}/${retries + 1} ` +
+        `(timeout ${timeoutMs}ms)`
+      );
+
+      const start = performance.now();
+
+      const res = await fetch(API_URL, {
+        method: 'POST',
+        body: JSON.stringify(body),
+        signal: ctrl.signal,
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const elapsed = Math.round(performance.now() - start);
+
       clearTimeout(tid);
-      if(!res.ok) throw new Error('HTTP ' + res.status);
+
+      if (!res.ok) {
+        throw new Error('HTTP ' + res.status);
+      }
+
       const data = await res.json();
-      if(data.status === 'error') throw new Error(data.message || 'Server error');
+
+      if (data.status === 'error') {
+        throw new Error(data.message || 'Server error');
+      }
+
+      console.log(
+        `✅ API ${body?.action} completed in ${elapsed}ms`
+      );
+
       return data;
-    }catch(e){
+
+    } catch (e) {
       clearTimeout(tid);
-      if(attempt === retries) throw e;
-      // Log retries: previously silent, which made a 404 in the console
-      // impossible to tell apart from a call that recovered on attempt 2.
-      console.warn('⚠️ apiPost[' + (body && body.action) + '] attempt ' + (attempt+1) + ' failed (' + e.message + ') — retrying...');
-      await new Promise(r => setTimeout(r, 600 * (attempt + 1)));
+
+      const error = timedOut
+        ? new Error(`Request timeout after ${timeoutMs}ms`)
+        : e;
+
+      if (attempt === retries) {
+        console.error(
+          `❌ apiPost[${body?.action}] failed after ${attempt + 1} attempts:`,
+          error
+        );
+        throw error;
+      }
+
+      console.warn(
+        `⚠️ apiPost[${body?.action}] attempt ${attempt + 1} failed ` +
+        `(${error.message}) — retrying...`
+      );
+
+      await new Promise(r =>
+        setTimeout(r, 600 * (attempt + 1))
+      );
     }
   }
 }
