@@ -2445,10 +2445,13 @@ async function _apiPostNow(body, retries = 2) {
       const res = await fetch(API_URL, {
         method: 'POST',
         body: JSON.stringify(body),
-        signal: ctrl.signal,
-        headers: {
-          'Content-Type': 'application/json'
-        }
+        signal: ctrl.signal
+        // NO custom headers here. Any header such as Content-Type:
+        // application/json turns this into a non-simple CORS request, the
+        // browser sends an OPTIONS preflight first, and Apps Script cannot
+        // answer OPTIONS — every POST then fails with "Failed to fetch".
+        // A plain string body is sent as text/plain, which Apps Script reads
+        // fine via e.postData.contents.
       });
 
       const elapsed = Math.round(performance.now() - start);
