@@ -2067,7 +2067,7 @@ function reopenLoginForExpiredRole(){
   if(role === 'admin') rdShowAdmin();
   else if(role === 'viewer') rdShowViewer();
   else rdShowRecorder();
-  document.getElementById('login-gate').style.display = 'flex';
+  openLoginGate();
 }
 function showSessionExpiredBanner(){
   _expiredRole = appMode;
@@ -2127,9 +2127,7 @@ function logout(){
   hideSessionExpiredBanner();
   // Land on the three-way picker so recorder/viewer/admin are an explicit
   // choice, not a default someone has to notice a small link to get past.
-  const gate = document.getElementById('login-gate');
-  gate.style.display = 'flex';
-  gate.style.opacity = '1';
+  openLoginGate();
   backToChoose();
   const errA = document.getElementById('login-err');
   if(errA) errA.style.display = 'none';
@@ -2141,10 +2139,7 @@ function showRecorderLogin(fromExpiredBanner){
   document.getElementById('login-admin').style.display    = 'none';
   document.getElementById('login-viewer').style.display   = 'none';
   document.getElementById('login-recorder').style.display = 'block';
-  if(fromExpiredBanner){
-    const gate = document.getElementById('login-gate');
-    gate.style.display = 'flex'; gate.style.opacity = '1';
-  }
+  if(fromExpiredBanner) openLoginGate();
   setTimeout(() => document.getElementById('recorder-pass')?.focus(), 100);
 }
 /* Device token for the login lockout (see _deviceNonceIfValid in Code.gs).
@@ -2314,11 +2309,22 @@ function shakeInputs(){
     setTimeout(() => { el.style.animation = ''; }, 400);
   });
 }
+/* Closing fades the gate out and hides it 300 ms later. Anything that reopens
+   it inside that window (logout, an expired session) must cancel the pending
+   hide, or the gate vanishes right after it was shown — and a reopen that set
+   only display would stay stuck at opacity 0, invisible. */
+let _gateHideTimer = null;
+function openLoginGate(){
+  clearTimeout(_gateHideTimer); _gateHideTimer = null;
+  const gate = document.getElementById('login-gate');
+  gate.style.display = 'flex'; gate.style.opacity = '1';
+}
 function closeLoginGate(){
   const gate = document.getElementById('login-gate');
   gate.style.transition = 'opacity 0.3s';
   gate.style.opacity = '0';
-  setTimeout(() => { gate.style.display = 'none'; gate.style.opacity = '1'; }, 300);
+  clearTimeout(_gateHideTimer);
+  _gateHideTimer = setTimeout(() => { _gateHideTimer = null; gate.style.display = 'none'; gate.style.opacity = '1'; }, 300);
 }
 function applyAppMode(mode){
   appMode = mode;
@@ -4340,12 +4346,19 @@ function enqueueRecord(rec){
    endpoint, so readings keep reaching the Sheet regardless of deploy order
    instead of piling up and parking in the queue. */
 let _batchUnsupported = false;
+/* Queue saves go out with no apiPost-level retries. The queue already retries
+   on its own timer and the server de-duplicates by id, so the extra attempts
+   bought nothing — but each one held the single foreground lane for up to the
+   30 s save timeout, so one failing batch could make a login or chart wait
+   ~90 s behind it. With 0, that wait is at most one timeout. */
+const QUEUE_SAVE_RETRIES = 0;
 async function _sendOneLegacy(it){
   const r = it.rec;
   const payload = { id:r.id, meterId:r.meterId, meterName:r.meterName, zone:r.zone,
                     date:r.date, time:r.time, kwh:r.kwh, user:r.user, note:r.note,
                     ts:r.ts, editedTs:'', editedBy:'' };
-  const res = await apiPost({ action:'saveRecord', record:payload, token: sessionToken });
+  // retries = 0: the queue is the retry loop (see QUEUE_SAVE_RETRIES).
+  const res = await apiPost({ action:'saveRecord', record:payload, token: sessionToken }, QUEUE_SAVE_RETRIES);
   if(!res || res.success === false) throw new Error((res && res.error) || 'บันทึกไม่สำเร็จ');
 }
 
@@ -4395,7 +4408,7 @@ async function flushQueue(manual){
                    date:r.date, time:r.time, kwh:r.kwh, user:r.user, note:r.note,
                    ts:r.ts, editedTs:'', editedBy:'' };
         });
-        const res = await apiPost({ action:'saveRecordsBatch', records: records, token: sessionToken });
+        const res = await apiPost({ action:'saveRecordsBatch', records: records, token: sessionToken }, QUEUE_SAVE_RETRIES);
         if(res && res.success === false && /Unknown action/i.test(res.error || '')){
           _batchUnsupported = true;   // backend predates the batch endpoint — fall back, don't count as a failure
           continue;
