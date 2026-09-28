@@ -5166,7 +5166,7 @@ async function exportFullTemplateExcel(){
 
   try{
     const workbook = new ExcelJS.Workbook();
-    workbook.creator = 'Substation SR Plant Logger';
+    workbook.creator = SITE_NAME + ' ' + SITE_CODE + ' Plant Logger';
     workbook.created = new Date();
 
     await buildDataSheetExcelJS(workbook, reportComputed);
