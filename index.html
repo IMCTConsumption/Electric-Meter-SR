@@ -362,6 +362,9 @@
   border-top: 1px solid var(--rd-line);
   padding: 12px;
 }
+/* release numbers (renderBuildInfo) */
+.rd-build-foot { padding: 6px 4px 0; font: 10.5px/1.4 var(--rd-font-mono); color: var(--rd-ink-3); overflow-wrap: anywhere; }
+.rd-build-foot.bad { color: var(--rd-danger); font-weight: 600; }
 
 /* ─── HIDE the original tab bar (drawer replaces it) ─── */
 #tabs-bar { display: none !important; }
@@ -689,6 +692,9 @@
   border: 1px solid var(--rd-warning); background: var(--rd-warning-soft); color: var(--rd-ink); cursor: pointer; white-space: nowrap; }
 .rd-queue-chip.stuck { border-color: var(--rd-danger); background: var(--rd-danger-soft); }
 @media (max-width: 720px) { .rd-hdr-right.has-queue #rd-last-sync { display: none; } }
+/* The release chip takes the same place on a phone. Two chips do not fit beside the
+   title there, so unsent readings win; the release warning is still in the menu and in Settings. */
+@media (max-width: 720px) { .rd-hdr-right.has-build #rd-last-sync, .rd-hdr-right.has-queue #hdr-build { display: none; } }
 /* Labels are upper-cased for style; a unit is not ("KWH"). */
 #in-kwh-label { text-transform: none; }
 .sc-status-txt {
@@ -1211,6 +1217,7 @@ i svg{ width:1em; height:1em; display:inline-block; vertical-align:-0.12em; }
     </button>
     <span id="rd-last-sync" title="เวลาที่ข้อมูลอัปเดตล่าสุด" style="font-family:var(--rd-font-mono);font-size:11px;color:var(--rd-ink-3);white-space:nowrap;margin-right:2px"></span>
     <button type="button" class="rd-queue-chip" id="hdr-queue" style="display:none" onclick="onQueueChip()"></button>
+    <button type="button" class="rd-queue-chip stuck" id="hdr-build" style="display:none" onclick="goTab('settings')">⚠️ รุ่น</button>
     <div class="rd-status-dot" id="sync-dot" title="Sync status"></div>
     <span id="hdr-small" style="display:none"></span>
   </div>
@@ -1281,6 +1288,7 @@ i svg{ width:1em; height:1em; display:inline-block; vertical-align:-0.12em; }
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg>
       Sign out
     </button>
+    <div class="rd-build-foot" id="build-foot"></div>
   </div>
 </aside>
 
@@ -1718,6 +1726,7 @@ i svg{ width:1em; height:1em; display:inline-block; vertical-align:-0.12em; }
     <div class="card">
       <div class="card-title">☁️ Google Sheets API</div>
       <div class="info-box"><strong>API URL ถูก lock</strong><br>ทุกอุปกรณ์ sync อัตโนมัติ</div>
+      <div id="build-info"></div>
       <div id="api-status" style="display:none;margin-bottom:10px"></div>
       <div class="btn-row">
         <button class="btn btn-primary btn-sm" onclick="testConn()">🔌 ทดสอบ</button>
@@ -1877,6 +1886,20 @@ const UNIT_WORD = "ใช้ไฟฟ้า";
 const UNIT_ICON = "⚡";
 const SESSION_TTL_MS = 4 * 60 * 60 * 1000; // matches SESSION_TTL_SECONDS in Code.gs
 
+/* ── Release numbers ──
+   'YYYY-MM-DD.n'. PAGE_BUILD is bumped by hand every time this file changes
+   (tools/check_builds.py stops a build whose file changed under an old number).
+   NEEDS_BACKEND moves only when this page starts relying on something an older
+   Code.gs does not have. Code.gs sends its own pair with doGet (`build`,
+   `needsPage`); renderBuildInfo() shows both and tells the admin when the two
+   sides do not fit — the usual cause is that one of the two was not deployed. */
+const PAGE_BUILD    = '2026-10-09.1';
+const NEEDS_BACKEND = '2026-10-07.1';
+let serverSeen = false;      // a doGet answer has arrived since this page was opened
+let serverBuild = '';        // its `build` ('' = a Code.gs from before release numbers)
+let serverNeedsPage = '';    // its `needsPage`
+let _buildWarned = false;    // the admin is told once per page load, not on every refresh
+
 /* ── localStorage namespacing ──
    All four apps are served from one GitHub Pages origin, so localStorage is
    shared. Keys are prefixed per-app (APP_NS) to prevent cross-app collision.
@@ -1887,6 +1910,31 @@ function lsGetRaw(k){ return localStorage.getItem(nsKey(k)); }
 function lsSetRaw(k, v){ localStorage.setItem(nsKey(k), v); }
 function lsRemove(k){ localStorage.removeItem(nsKey(k)); }
 
+/* ── Lists that come from the device's storage or from doGet ──
+   The whole page treats them as "an array of objects with an id / key / date".
+   One entry that is not — a damaged cache on a phone, a blank row or a number
+   typed as a meter id in the sheet — used to stop init() or a whole tab
+   (found 2026-10-07: `sub.id.replace is not a function`, `Cannot read
+   properties of null`). They are cleaned once, where they come in, and the
+   rest of the page can keep trusting the shape. Ids are only made text, never
+   trimmed or re-cased: the server looks meters up by the id exactly as stored. */
+function _txt(v){ return (v === undefined || v === null) ? '' : String(v); }
+function _cleanMeters(list){
+  if(!Array.isArray(list)) return [];
+  return list.filter(m => m && typeof m === 'object' && !Array.isArray(m) && _txt(m.id).trim() !== '')
+             .map(m => Object.assign({}, m, { id: _txt(m.id), name: _txt(m.name), zone: _txt(m.zone) }));
+}
+function _cleanGroups(list){
+  if(!Array.isArray(list)) return [];
+  return list.filter(g => g && typeof g === 'object' && !Array.isArray(g) && _txt(g.key) !== '');
+}
+function _cleanCalendar(list){
+  if(!Array.isArray(list)) return [];
+  // a date typed as text in the sheet ('1/10/2026') stays: it matches no day, but the admin can see it in the list and remove it
+  return list.filter(c => c && typeof c === 'object' && !Array.isArray(c) && _txt(c.date) !== '')
+             .map(c => Object.assign({}, c, { date: _txt(c.date), type: _txt(c.type) }));
+}
+
 /* ═══════════ REPORT GROUPS (consumption zoning) ═══════════
    Loaded live from the _REPORT_GROUPS sheet (doGet → reportGroups). An admin
    edits it directly in the Sheet — no code change to add a zone, move a meter,
@@ -1894,16 +1942,16 @@ function lsRemove(k){ localStorage.removeItem(nsKey(k)); }
    A meter's `zone` field (on _METERS) is display-grouping ONLY and is decoupled
    from this: a monitoring meter can appear under a zone yet be in no group here
    (so it is never counted in any consumption total). */
-let reportGroups = Array.isArray(lsGet('reportGroups')) ? lsGet('reportGroups') : [];
+let reportGroups = _cleanGroups(lsGet('reportGroups'));
 
 function groupByKey(key){ return reportGroups.find(g => g.key === key) || null; }
 function zoneName(zoneKey){ const g = groupByKey(zoneKey); return (g && g.name) ? g.name : (zoneKey || 'อื่นๆ'); }
 function zoneIcon(zoneKey){ const g = groupByKey(zoneKey); return (g && g.icon) ? g.icon : '📦'; }
 
 /* ───────── STATE ───────── */
-let subs                   = Array.isArray(lsGet('subs'))     ? lsGet('subs')     : [];
+let subs                   = _cleanMeters(lsGet('subs'));
 let records                = [];  // never hydrated from localStorage — admin-session-only
-let workCalendar           = Array.isArray(lsGet('calendar')) ? lsGet('calendar') : [];
+let workCalendar           = _cleanCalendar(lsGet('calendar'));
 let filteredRecords        = [];
 let currentPage            = 1;
 let pageSize               = 15;
@@ -2065,7 +2113,11 @@ async function alertEmailOp(op){
     const mode = (SETTING_CHOICES.alertEmail || {})[res.mode] || res.mode;
     st.innerHTML = esc(auto) + ' · ' + esc(mode) + ' · หลัง ' + esc(String(res.hour)) + ':00 น. · ผู้รับ ' + esc(String(res.recipients)) + ' คน' +
       (res.lastDay ? ' · ทำงานล่าสุด ' + esc(fmtDate(res.lastDay)) : '') +
-      '<br>วันนี้' + (res.worthSending ? 'มีรายการที่จะแจ้ง' : 'ไม่มีรายการนอกช่วงปกติ') + ': ' + esc(res.subject || '');
+      '<br>วันนี้' + (res.worthSending ? 'มีรายการที่จะแจ้ง' : 'ไม่มีรายการนอกช่วงปกติ') + ': ' + esc(res.subject || '') +
+      // why mail may not be going out (Code.gs 2026-10-09 and later sends these)
+      (res.authOk === false ? '<br><b style="color:var(--red)">⚠️ สิทธิ์ของสคริปต์ยังไม่ครบ — เมลอัตโนมัติจะไม่ออก</b><br>เปิด Apps Script ของแอปนี้ → เลือกฟังก์ชัน <code>alertEmail_Install</code> → Run → ในหน้าขออนุญาตของ Google ติ๊กอนุญาตทุกข้อ แล้วกดดูตัวอย่างอีกครั้ง' : '') +
+      (res.stale ? '<br><b style="color:var(--red)">⚠️ ตั้งเวลาไว้ แต่ไม่ได้ทำงานตั้งแต่ ' + esc(fmtDate(res.lastDay)) + '</b> — ดูหน้า Executions ใน Apps Script ว่าล้มเพราะอะไร' : '') +
+      (res.error ? '<br><b style="color:var(--red)">❌ ส่งไม่สำเร็จ' + (res.errorDay ? ' (' + esc(fmtDate(res.errorDay)) + ')' : '') + ':</b> ' + esc(res.error) : '');
     pv.innerHTML = '';
     const frame = document.createElement('iframe');
     frame.setAttribute('sandbox', '');            // no scripts, no same-origin access
@@ -2089,11 +2141,64 @@ function renderWeekendNote(){
   const names = ds => ds.length ? ds.map(d => DOW_TH[d]).join(', ') : '—';
   el.textContent = names(work) + ' = วันทำงาน, ' + names(we) + ' = วันหยุด';
 }
+/* Compares two release numbers part by part, as numbers, so '…-07.2' comes
+   before '…-07.10'. <0, 0 or >0; NaN when either is not a release number. */
+function _buildCmp(a, b){
+  const re = /^(\d{4})-(\d{2})-(\d{2})\.(\d+)$/;
+  const ma = re.exec(String(a == null ? '' : a)), mb = re.exec(String(b == null ? '' : b));
+  if(!ma || !mb) return NaN;
+  for(let i = 1; i <= 4; i++){ const d = Number(ma[i]) - Number(mb[i]); if(d) return d; }
+  return 0;
+}
+/* What does not fit between this page and the Code.gs that answered, in words
+   an admin can act on. '' = they fit, or the server has not answered yet (off
+   line is not a release problem). An unreadable number counts as not fitting:
+   NaN fails both comparisons below. */
+function buildProblem(){
+  if(!serverSeen) return '';
+  const deployGs = ' — วาง Code.gs รุ่นล่าสุดใน Apps Script แล้ว Deploy → Manage deployments → New version';
+  if(!serverBuild) return 'Code.gs ที่ใช้อยู่เป็นรุ่นเก่า (ยังไม่มีเลขรุ่น) แต่หน้าเว็บนี้ต้องใช้ Code.gs รุ่น ' + NEEDS_BACKEND + ' ขึ้นไป' + deployGs;
+  if(!(_buildCmp(serverBuild, NEEDS_BACKEND) >= 0)) return 'Code.gs ที่ใช้อยู่ (รุ่น ' + serverBuild + ') เก่ากว่าที่หน้าเว็บนี้ต้องใช้ (รุ่น ' + NEEDS_BACKEND + ' ขึ้นไป)' + deployGs;
+  if(serverNeedsPage && !(_buildCmp(PAGE_BUILD, serverNeedsPage) >= 0)) return 'หน้าเว็บนี้ (รุ่น ' + PAGE_BUILD + ') เก่ากว่าที่ Code.gs ต้องใช้ (รุ่น ' + serverNeedsPage + ' ขึ้นไป) — อัปโหลด index.html รุ่นล่าสุดขึ้น GitHub แล้วรีเฟรชหน้านี้';
+  return '';
+}
+/* Remembers which Code.gs answered (doGet and the "ทดสอบ" button). */
+function _noteServerBuild(data){
+  serverSeen = true;
+  serverBuild     = (data && typeof data.build === 'string')     ? data.build     : '';
+  serverNeedsPage = (data && typeof data.needsPage === 'string') ? data.needsPage : '';
+  renderBuildInfo();
+}
+/* The two release numbers: one line at the foot of the menu for everyone (so a
+   recorder can read them out over the phone) and the full message in Settings.
+   When they do not fit, the admin — the only person who can deploy — also gets
+   one toast and a header chip that leads to Settings. */
+function renderBuildInfo(){
+  const problem = buildProblem();
+  const isAdmin = appMode === 'admin';
+  const line = 'หน้าเว็บ ' + PAGE_BUILD + ' · Code.gs ' + (serverBuild || (serverSeen ? 'ไม่มีเลขรุ่น' : '—'));
+  const foot = document.getElementById('build-foot');
+  if(foot){ foot.textContent = line; foot.classList.toggle('bad', !!problem && isAdmin); }
+  const chip = document.getElementById('hdr-build');      // stays in the header until the two sides fit
+  if(chip){
+    chip.style.display = (problem && isAdmin) ? '' : 'none'; chip.title = problem;
+    if(chip.parentElement) chip.parentElement.classList.toggle('has-build', !!problem && isAdmin);
+  }
+  const box = document.getElementById('build-info');
+  if(box) box.innerHTML = problem
+    ? '<div class="warn-box">⚠️ <strong>หน้าเว็บกับ Code.gs รุ่นไม่เข้ากัน</strong><br>' + esc(problem) + '<br><span style="font-size:12px">' + esc(line) + '</span></div>'
+    : '<div class="info-box" style="margin-bottom:10px">รุ่นที่ใช้อยู่: ' + esc(line) + (serverSeen ? ' ✅' : ' (ยังไม่ได้คำตอบจากเซิร์ฟเวอร์)') + '</div>';
+  if(problem && isAdmin && !_buildWarned){
+    _buildWarned = true;
+    toast('⚠️ หน้าเว็บกับ Code.gs รุ่นไม่เข้ากัน', 'err');     // short: one line on a phone; the chip leads on
+  }
+}
 /* Applies a doGet payload (loadFromServer and refreshData share it). */
 function _applyDoGet(data){
-  if(data.meters       && Array.isArray(data.meters))       subs         = data.meters;
-  if(data.reportGroups && Array.isArray(data.reportGroups)) reportGroups = data.reportGroups;
-  if(data.calendar     && Array.isArray(data.calendar))     workCalendar = data.calendar;
+  _noteServerBuild(data);
+  if(data.meters       && Array.isArray(data.meters))       subs         = _cleanMeters(data.meters);
+  if(data.reportGroups && Array.isArray(data.reportGroups)) reportGroups = _cleanGroups(data.reportGroups);
+  if(data.calendar     && Array.isArray(data.calendar))     workCalendar = _cleanCalendar(data.calendar);
   if(data.settings     && typeof data.settings === 'object') appSettings = Object.assign({}, SETTINGS_DEFAULTS, data.settings);
   persist();
 }
@@ -2236,7 +2341,11 @@ function clearSessionStorage(){
 function restoreSession(){
   let saved;
   try{ saved = JSON.parse(localStorage.getItem(nsKey('authSession'))); }catch(e){ saved = null; }
-  if(!saved || !saved.token || !saved.expiresAt) return false;
+  if(!saved || typeof saved !== 'object' || typeof saved.token !== 'string' || !saved.token ||
+     typeof saved.expiresAt !== 'number' || !isFinite(saved.expiresAt)){
+    if(saved) clearSessionStorage();      // not a session this page wrote: an expiry that is not a number never expired
+    return false;
+  }
   if(Date.now() >= saved.expiresAt){ clearSessionStorage(); return false; }
   sessionToken     = saved.token;
   currentUser      = saved.name || '';
@@ -2551,6 +2660,7 @@ function closeLoginGate(){
 }
 function applyAppMode(mode){
   appMode = mode;
+  try { renderBuildInfo(); } catch(e){ /* settings panel not in DOM yet during early init */ }
   const tabsBar = document.getElementById('tabs-bar');
   if(tabsBar) tabsBar.className = mode === 'admin' ? 'tabs admin-mode' : 'tabs basic-mode';
   // Push the role change into the sidebar right away. It used to refresh only
@@ -3455,6 +3565,7 @@ async function testConn(){
     const data = await res.json();
     if(data.status === 'error') throw new Error(data.message);
     setSyncStatus('ok','เชื่อมต่อสำเร็จ');
+    _noteServerBuild(data);
     const recNote = appMode === 'admin' ? `${records.length} records, ` : '';
     box.innerHTML = `<div class="info-box">✅ เชื่อมต่อสำเร็จ — ${recNote}${subs.length} subs</div>`;
   }catch(e){
@@ -4686,7 +4797,11 @@ function renderQR(){
   const filterZone = zoneSel?.value || '';
   const list = filterZone ? subs.filter(s => s.zone === filterZone) : subs;
   if(!list.length){ grid.innerHTML = '<div class="section-empty">ไม่มี Meter ใน Zone นี้</div>'; return; }
-  ensureQRCode().catch(function(e){ grid.innerHTML = '<div class="warn-box">❌ โหลด QR library ไม่ได้</div>'; });
+  // One load for the whole grid. It used to be asked for once per meter: when the
+  // CDN could not be reached that was a new <script> and an unhandled rejection
+  // for every meter, and the squares stayed blank without a word.
+  const qrReady = ensureQRCode();
+  qrReady.catch(function(e){ grid.innerHTML = '<div class="warn-box">❌ โหลดตัวสร้าง QR ไม่ได้ (เครื่องนี้เข้า cdnjs.cloudflare.com ไม่ได้) — ลองใหม่เมื่อเครือข่ายปกติ</div>'; });
   list.forEach(sub => {
     const url = QR_BASE_URL.replace(/\/$/, '') + '?meter=' + encodeURIComponent(sub.id);   // ?sub= on older printed codes still works
     const qid = 'qr_' + sub.id.replace(/\W/g,'_');
@@ -4694,14 +4809,14 @@ function renderQR(){
     div.className = 'qr-item';
     div.innerHTML = `<div class="qi-name">${esc(sub.name)}<br><span style="color:var(--purple)">${esc(zoneName(sub.zone))}</span></div><div class="qi-id">${esc(sub.id)}</div><div class="qi-qr" id="${qid}"></div><div class="qi-url">${esc(url.length>55 ? url.slice(0,52)+'…' : url)}</div>`;
     grid.appendChild(div);
-    ensureQRCode().then(function(){
+    qrReady.then(function(){
       const elQ = document.getElementById(qid);
       if(!elQ) return;
       try{
         elQ.innerHTML = '';
         new QRCode(elQ, { text:url, width:110, height:110, colorDark:'#000', colorLight:'#fff', correctLevel:QRCode.CorrectLevel.M });
       }catch(e){}
-    });
+    }, function(){ /* reported once, above */ });
   });
 }
 
@@ -4944,6 +5059,14 @@ function loadQueue(){
       const raw = lsGetRaw(QUEUE_KEY);
       stored = raw ? (JSON.parse(raw) || []) : [];
     } catch(e){ stored = []; }
+    if(!Array.isArray(stored)){
+      // Valid JSON, but not a list: `stored.filter` threw here, init() stopped and the
+      // app never loaded again on that device. Nothing in it can be sent as it is —
+      // keep the text aside (it may hold readings someone can still read) and go on.
+      try { lsSetRaw(QUEUE_KEY + '.damaged', String(lsGetRaw(QUEUE_KEY)).slice(0, 200000)); } catch(e){ /* storage full: the app still has to open */ }
+      console.warn('⚠️ send queue in storage was not a list — kept aside as ' + QUEUE_KEY + '.damaged');
+      stored = [];
+    }
     const have = new Set(sendQueue.map(q => String(q && q.rec && q.rec.id)));
     const older = stored.filter(q => q && q.rec && !have.has(String(q.rec.id)));
     if(older.length){ sendQueue.unshift(...older); persistQueue(); }   // older readings first: send order = reading order
@@ -6725,7 +6848,17 @@ function buildChartOpts(dataPoints, state, TC){
      somebody's two days stands above its range, grey, and says why. */
   const rule = state.rule || { weeks: normalWeeks(), bandPct: normalBandPct(), minDiff: alertMinDiff() };
   const isDay = state.period === 'day';
-  const showNorm = isDay && !isLevel && state.showNorm !== false && dataPoints.some(d => d.normal !== null && d.normal !== undefined);
+  /* The range is drawn as far as the last day that has a bar, no further. Ahead of
+     it a normal still comes (the server's, from the meters of the last day with
+     figures; the page's, for one meter), but each day's normal is the median of
+     the weeks before THAT day, and for a day still to come those weeks run into
+     days not read yet: the pool thins out as the month goes on, so the lines
+     wandered, broke off at a holiday and stopped before the end of the month
+     (seen 2026-10-09, FR SHOP, "เดือนนี้"). */
+  let lastBar = -1;
+  dataPoints.forEach((d, i) => { if(d.hasData) lastBar = i; });
+  const normAt = (d, i) => (i <= lastBar && d.normal !== null && d.normal !== undefined) ? d.normal : null;
+  const showNorm = isDay && !isLevel && state.showNorm !== false && dataPoints.some((d, i) => normAt(d, i) !== null);
   dataPoints.forEach(d => {
     d.partial = !!(isDay && d.hasData && d.missing > 0);
     // What is compared: for a group, the server's `cmp` against `cmpN` (the
@@ -6756,7 +6889,7 @@ function buildChartOpts(dataPoints, state, TC){
     const _avgForMax = state.period === 'day' ? Math.max(avgWork, avgHol) : avg;
     if(_avgForMax > _peak) _peak = _avgForMax;
   }
-  if(showNorm) dataPoints.forEach(d => { if(d.normal > 0 && d.normal * (1 + rule.bandPct / 100) > _peak) _peak = d.normal * (1 + rule.bandPct / 100); });
+  if(showNorm) dataPoints.forEach((d, i) => { const nv = normAt(d, i); if(nv > 0 && nv * (1 + rule.bandPct / 100) > _peak) _peak = nv * (1 + rule.bandPct / 100); });
   const yMax = _peak > 0 ? _niceCeil(_peak * 1.1) : undefined;
 
   let series, chartColors;
@@ -6772,15 +6905,17 @@ function buildChartOpts(dataPoints, state, TC){
   const hasSpecial = dataPoints.some(d => specialFill(d));
   const barFill = base => function(o){ return specialFill(dataPoints[o.dataPointIndex]) || base; };
   if(useHolSplit){
-    const workData = dataPoints.map(d => d.hol ? null : R(d.value));
-    const holData  = dataPoints.map(d => d.hol ? R(d.value) : null);
+    const workData = dataPoints.map(d => (d.hol || !d.hasData) ? null : R(d.value));
+    const holData  = dataPoints.map(d => (d.hol && d.hasData) ? R(d.value) : null);
     series = [
       { name:W+' (วันทำงาน)', data:workData },
       { name:W+' (วันหยุด)',  data:holData  }
     ];
     chartColors = [TC.green, TC.orange];
   } else {
-    const values = dataPoints.map(d => R(d.value));
+    // A day without a figure (not read yet, or still to come) is a gap, not 0:
+    // in the line view the line fell to zero after the last reading.
+    const values = dataPoints.map(d => d.hasData ? R(d.value) : null);
     series = [{ name: isLevel ? W+' ('+U+')' : W+' ('+U+'/'+pl+')', data:values }];
     chartColors = [chartType === 'bar' ? TC.green : TC.accent];
   }
@@ -6795,7 +6930,7 @@ function buildChartOpts(dataPoints, state, TC){
   }
   if(showNorm){
     // The range as two thin lines: each day's own upper and lower limit.
-    const lim = f => dataPoints.map(d => (d.normal === null || d.normal === undefined) ? null : R(Math.max(0, d.normal * f)));
+    const lim = f => dataPoints.map((d, i) => { const nv = normAt(d, i); return nv === null ? null : R(Math.max(0, nv * f)); });
     series.push({ name:'ช่วงปกติ +'+rule.bandPct+'%', data:lim(1 + rule.bandPct / 100), type:'line' },
                 { name:'ช่วงปกติ −'+rule.bandPct+'%', data:lim(1 - rule.bandPct / 100), type:'line' });
     chartColors.push(TC.text2, TC.text2);
@@ -6868,7 +7003,10 @@ function buildChartOpts(dataPoints, state, TC){
     colors: chartColors,
     responsive:[{ breakpoint:640, options:{ chart:{height:300}, xaxis:{labels:{rotate:-45, rotateAlways:true, hideOverlappingLabels:true, style:{fontSize:'8px'}}}, plotOptions:{bar:{columnWidth:'80%'}} } }],
     plotOptions:{ bar:{borderRadius:4,columnWidth:'70%'} },
-    stroke:{ width:strokeW, dashArray:strokeDash },
+    // Straight between days for every line. The default for a line added to a bar
+    // chart is 'smooth', which bent the range lines between a working day and a
+    // holiday through values that belong to neither (line charts were straight already).
+    stroke:{ width:strokeW, dashArray:strokeDash, curve: series.map(() => 'straight') },
     markers:{ discrete: discrete },
     fill:{ opacity:chartType==='bar'?0.7:0.8,
            // Bar series: per-bar colour (see specialFill); legend keeps `colors`.
@@ -7687,8 +7825,8 @@ function rdSyncDrawerUser(){
   const un  = document.getElementById('rd-drawer-username');
   const rl  = document.getElementById('rd-drawer-role');
   if (av) av.textContent = (uname || mode || 'U').substring(0, 1).toUpperCase();
-  if (un) un.textContent = uname || (mode === 'admin' ? 'Administrator' : 'Recorder');
-  if (rl) rl.textContent = mode === 'admin' ? 'Admin access' : 'Recorder';
+  if (un) un.textContent = uname || (mode === 'admin' ? 'Administrator' : mode === 'viewer' ? 'Viewer' : 'Recorder');
+  if (rl) rl.textContent = mode === 'admin' ? 'Admin access' : mode === 'viewer' ? 'Report viewer' : 'Recorder';
   const logout = document.getElementById('rd-logout-item');
   if (logout) logout.style.display = 'flex';
 }
